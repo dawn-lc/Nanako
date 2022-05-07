@@ -12,7 +12,7 @@ namespace Nanako.Module;
 
 public static class Command
 {
-    private static uint messageCounter;
+    
 
     /// <summary>
     /// On friend message
@@ -36,6 +36,8 @@ public static class Command
                     "status" => OnCommandStatus(textChain),
                     "echo" => OnCommandEcho(textChain, eventSource.Chain),
                     "addbot" => OnCommandAddBot(Command[1], Command[2]),
+                    "SmsCaptcha" => OnCommandSmsCaptcha(Command[1], Command[2]),
+                    "SliderCaptcha" => OnCommandSliderCaptcha(Command[1], Command[2]),
                     _ => new MessageBuilder().Text("Unknown command")
                 }))
                 {
@@ -50,8 +52,12 @@ public static class Command
             await bot.SendFriendMessage(eventSource.FriendUin,
                 Text($"{e.Message}\n{e.StackTrace}"));
         }
-        ++messageCounter;
+        ++Program.messageCounter;
     }
+
+    private static MessageBuilder OnCommandSmsCaptcha(string Bot, string Captcha) => Program.BotList.Find(b => !b.IsOnline() && b.Uin.ToString() == Bot).SubmitSmsCode(Captcha) ? new MessageBuilder().Text("短信验证成功") : new MessageBuilder().Text("短信验证失败");
+
+    private static MessageBuilder OnCommandSliderCaptcha(string Bot, string Captcha) => Program.BotList.Find(b => !b.IsOnline() && b.Uin.ToString() == Bot).SubmitSliderTicket(Captcha) ? new MessageBuilder().Text("滑块验证成功") : new MessageBuilder().Text("滑块验证失败");
     /// <summary>
     /// On group message
     /// </summary>
@@ -92,7 +98,7 @@ public static class Command
             Console.WriteLine(e.StackTrace);
             await bot.SendGroupMessage(eventSource.GroupUin, Text($"{e.Message}\n{e.StackTrace}"));
         }
-        ++messageCounter;
+        ++Program.messageCounter;
     }
 
     /// <summary>
@@ -169,7 +175,7 @@ public static class Command
             .Text($"[version:{BuildStamp.Version}]\n")
             .Text($"[{BuildStamp.BuildTime}]\n\n")
             // System status
-            .Text($"Processed {messageCounter} message(s)\n")
+            .Text($"Processed {Program.messageCounter} message(s)\n")
             .Text($"GC Memory {GC.GetTotalAllocatedBytes().Bytes2MiB(2)} MiB " +
                   $"({Math.Round((double)GC.GetTotalAllocatedBytes() / GC.GetTotalMemory(false) * 100, 2)}%)\n")
             .Text($"Total Memory {Process.GetCurrentProcess().WorkingSet64.Bytes2MiB(2)} MiB\n\n")

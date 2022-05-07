@@ -5,7 +5,10 @@
     <TargetFramework>net6.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <Configurations>Debug;Release;Linux</Configurations>
+    <Configurations>Debug;Release</Configurations>
+    <DebugType>portable</DebugType>
+    <SignAssembly>False</SignAssembly>
+    <ErrorReport>prompt</ErrorReport>
   </PropertyGroup>
 
   <ItemGroup>
