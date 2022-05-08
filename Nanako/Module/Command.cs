@@ -7,6 +7,7 @@ using Konata.Core.Message;
 using Konata.Core.Message.Model;
 using System.Diagnostics;
 using Konata.Core.Common;
+using PuppeteerSharp;
 
 namespace Nanako.Module;
 
@@ -26,9 +27,9 @@ public static class Command
         Console.WriteLine("[{0}({1})]:<{2}({3})>{4}", bot.Name, bot.Uin, eventSource.GetType().Name, eventSource.FriendUin, textChain);
         try
         {
-            if (textChain.Content[0] == '/')
+            if (textChain.Content.TrimStart()[0] == '/')
             {
-                var Command = new Commands<string>(textChain.Content);
+                var Command = new Commands<string>(textChain.Content.Trim());
                 if (!await bot.SendFriendMessage(eventSource.FriendUin, Command[0][1..] switch
                 {
                     "help" => OnCommandHelp(textChain),
@@ -36,8 +37,8 @@ public static class Command
                     "status" => OnCommandStatus(textChain),
                     "echo" => OnCommandEcho(textChain, eventSource.Chain),
                     "addbot" => OnCommandAddBot(Command[1], Command[2]),
-                    "SmsCaptcha" => OnCommandSmsCaptcha(Command[1], Command[2]),
-                    "SliderCaptcha" => OnCommandSliderCaptcha(Command[1], Command[2]),
+                    "Captcha" => OnCommandCaptcha(Command[1], Command[2], Command[3]),
+                    "StartCaptcha" => await OnCommandStartCaptchaAsync(Command[1], Command[2]),
                     _ => new MessageBuilder().Text("Unknown command")
                 }))
                 {
@@ -55,9 +56,75 @@ public static class Command
         ++Program.messageCounter;
     }
 
-    private static MessageBuilder OnCommandSmsCaptcha(string Bot, string Captcha) => Program.BotList.Find(b => !b.IsOnline() && b.Uin.ToString() == Bot).SubmitSmsCode(Captcha) ? new MessageBuilder().Text("短信验证成功") : new MessageBuilder().Text("短信验证失败");
+    private static async Task<MessageBuilder> OnCommandStartCaptchaAsync(string Type, string Bot)
+    {
+        Bot? MainBot = Program.BotList.Find(p => p.IsOnline());
+        var (bot, eventSource) = Program.NeedCaptchaBotList.Find(p => p.bot.Uin.ToString() == Bot);
+        Bot? OnCaptchaBot = bot;
+        CaptchaEvent? OnCaptchaBotCaptcha = eventSource;
+        if (OnCaptchaBot != null)
+        {
+            switch (Type)
+            {
+                case "Auto":
+                    try
+                    {
+                        await new BrowserFetcher().DownloadAsync(BrowserFetcher.DefaultChromiumRevision);
+                    }
+                    catch (Exception)
+                    {
+                        return new MessageBuilder().Text("下载用于进行滑块验证的浏览器时出现问题, 请确认您是否能够访问https://storage.googleapis.com");
+                    }
+                    var browser = await Puppeteer.LaunchAsync(new LaunchOptions()
+                    {
+                        Headless = false,
+                        DefaultViewport = new ViewPortOptions(),
+                        Args = new string[] {
+                                "--disable-features=site-per-process",
+                                "--window-size=300,550",
+                                eventSource.SliderUrl
+                            }
+                    });
+                    (await browser.PagesAsync())[0].Response += async (page, e) =>
+                    {
+                        if (e.Response.Url.Contains("cap_union_new_verify"))
+                        {
+                            var Response = await e.Response.JsonAsync();
+                            if (Response.Value<int>("errorCode") == 0)
+                            {
+                                _ = bot.SubmitSliderTicket(Response.Value<string>("ticket")) ? await MainBot.SendFriendMessage(Program.Config.Owner, new MessageBuilder().Text($"{bot.Uin} 验证成功\n")) : await MainBot.SendFriendMessage(Program.Config.Owner, new MessageBuilder().Text($"{bot.Uin} 验证失败\n"));
+                                await browser.CloseAsync();
+                            }
+                        }
+                    };
+                    return new MessageBuilder().Text("请在打开的窗口内进行验证");
+                case "Ticket":
+                    return new MessageBuilder()
+                        .Text($"浏览器打开链接:{eventSource.SliderUrl}\n")
+                        .Text($"在验证前请打开浏览器开发者工具, 验证完成后, 找到尾部为\"cap_union_new_verify\"的网络请求.\n")
+                        .Text($"点击请求, 在响应面板中找到名为\"ticket\"的值, 完整复制并粘贴到下面的命令中.")
+                        .Text($"发送 /Captcha Slider {bot.Uin} 获取到的值 进行验证.");
+                default:
+                    return new MessageBuilder().Text("未知的验证码类型");
+            }
+        }
+        return new MessageBuilder().Text("没有找到这个Bot");
+    }
+    private static MessageBuilder OnCommandCaptcha(string Type, string Bot, string Captcha) 
+    {
+        Bot? OnCaptchaBot = Program.BotList.Find(b => !b.IsOnline() && b.Uin.ToString() == Bot);
+        if (OnCaptchaBot != null)
+        {
+            return Type switch
+            {
+                "SMS" => OnCaptchaBot.SubmitSmsCode(Captcha) ? new MessageBuilder().Text("短信验证成功") : new MessageBuilder().Text("短信验证失败"),
+                "Slider" => OnCaptchaBot.SubmitSliderTicket(Captcha) ? new MessageBuilder().Text("滑块验证成功") : new MessageBuilder().Text("滑块验证失败"),
+                _ => new MessageBuilder().Text("未知的验证码类型"),
+            };
+        }
+        return new MessageBuilder().Text("没有找到这个Bot");
+    }
 
-    private static MessageBuilder OnCommandSliderCaptcha(string Bot, string Captcha) => Program.BotList.Find(b => !b.IsOnline() && b.Uin.ToString() == Bot).SubmitSliderTicket(Captcha) ? new MessageBuilder().Text("滑块验证成功") : new MessageBuilder().Text("滑块验证失败");
     /// <summary>
     /// On group message
     /// </summary>
@@ -72,9 +139,9 @@ public static class Command
 
         try
         {
-            if (textChain.Content[0] == '/')
+            if (textChain.Content.TrimStart()[0] == '/')
             {
-                var Command = new Commands<string>(textChain.Content);
+                var Command = new Commands<string>(textChain.Content.Trim());
                 if (!await bot.SendGroupMessage(eventSource.GroupUin, Command[0][1..] switch
                 {
                     "help" => OnCommandHelp(textChain),

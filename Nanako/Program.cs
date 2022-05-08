@@ -11,11 +11,12 @@ using Nanako.Utils;
 
 namespace Nanako;
 
-class Config
+public class Config
 {
     public class BotConfig
     {
         public uint BotId { get; set; }
+        public bool Enable { get; set; }
         [JsonIgnore]
         public Konata.Core.Common.BotConfig? Config { get; set; }
         [JsonIgnore]
@@ -42,10 +43,10 @@ class Config
 
 public static class Program
 {
-    private static Config Config;
+    public static Config Config;
     public static List<Bot> BotList;
     public static uint messageCounter;
-    public static Timer? t;
+    public static List<(Bot bot, CaptchaEvent eventSource)> NeedCaptchaBotList;
 
 
     private static T? DeserializeFile<T>(string path)
@@ -134,25 +135,28 @@ public static class Program
                 bot.OnFriendMessage -= Command.OnFriendMessage;
                 bot.OnGroupMessage -= Command.OnGroupMessage;
 
-                bot.OnCaptcha += BotCaptcha;
-                bot.OnBotOnline += BotOnline;
-                bot.OnBotOffline += BotOffline;
-                bot.OnFriendMessage += Command.OnFriendMessage;
-                bot.OnGroupMessage += Command.OnGroupMessage;
-                if (await bot.Login())
+                if (config.Enable)
                 {
-                    config.KeyStore = bot.KeyStore;
+                    bot.OnCaptcha += BotCaptcha;
+                    bot.OnBotOnline += BotOnline;
+                    bot.OnBotOffline += BotOffline;
+                    bot.OnFriendMessage += Command.OnFriendMessage;
+                    bot.OnGroupMessage += Command.OnGroupMessage;
+                    if (await bot.Login())
+                    {
+                        config.KeyStore = bot.KeyStore;
+                    }
+                    else
+                    {
+                        Console.WriteLine("Login failed, please type your password.");
+                        Console.Write("Password: ");
+                        config.KeyStore = new BotKeyStore(bot.KeyStore.Account.Uin.ToString(), Console.ReadLine());
+                        BotList.Remove(bot);
+                        BotList.Add(BotFather.Create(config.Config, config.Device, config.KeyStore));
+                        Autologin(BotList.Find(p => p.Uin == config.KeyStore.Account.Uin));
+                    }
+                    UpdateKeyStore(bot);
                 }
-                else
-                {
-                    Console.WriteLine("Login failed, please type your password.");
-                    Console.Write("Password: ");
-                    config.KeyStore = new BotKeyStore(bot.KeyStore.Account.Uin.ToString(), Console.ReadLine());
-                    BotList.Remove(bot);
-                    BotList.Add(BotFather.Create(config.Config, config.Device, config.KeyStore));
-                    Autologin(BotList.Find(p => p.Uin == config.KeyStore.Account.Uin));
-                }
-                UpdateKeyStore(bot);
             }
         }
         else
@@ -186,7 +190,9 @@ public static class Program
     {
         if (Config.ConfigList.FindAll(p => p.BotId.ToString() == account).Count == 0)
         {
-            Config.BotConfig botConfig = new() {
+            Config.BotConfig botConfig = new()
+            {
+                Enable = true,
                 BotId = Convert.ToUInt32(account),
                 Config = Config.GlobalConfig,
                 Device = BotDevice.Default(),
@@ -209,6 +215,8 @@ public static class Program
     {
         Config = GetConfig();
         BotList = new List<Bot>();
+        messageCounter = 0;
+        NeedCaptchaBotList = new List<(Bot bot, CaptchaEvent eventSource)>();
 
         if (Config.ConfigList.Count < 1)
         {
@@ -220,6 +228,7 @@ public static class Program
             var password = Console.ReadLine();
             Config.BotConfig botConfig = new()
             {
+                Enable = true,
                 BotId = Convert.ToUInt32(account),
                 Config = Config.GlobalConfig,
                 Device = BotDevice.Default(),
@@ -239,7 +248,7 @@ public static class Program
         {
             Autologin(bot);
         }
-
+        Console.WriteLine("OK");
         while (true)
         {
             string? input= Console.ReadLine();
@@ -281,67 +290,23 @@ public static class Program
         switch (eventSource.Type)
         {
             case CaptchaEvent.CaptchaType.Sms:
+                NeedCaptchaBotList.Add((bot, eventSource));
                 await MainBot.SendFriendMessage(Config.Owner,
                     new MessageBuilder()
                     .Text($"[{bot.Uin}] 需要进行短信验证!\n")
                     .Text($"绑定手机号为: {eventSource.Phone} 请检查是否收到验证码!\n")
-                    .Text($"收到验证码后请发送 /SmsCaptcha {bot.Uin} 验证码 进行验证.")
+                    .Text($"收到验证码后请发送 /Captcha SMS {bot.Uin} 验证码 进行验证.")
                 );
                 break;
             case CaptchaEvent.CaptchaType.Slider:
+                NeedCaptchaBotList.Add((bot, eventSource));
                 await MainBot.SendFriendMessage(Config.Owner,
                     new MessageBuilder()
                     .Text($"[{bot.Uin}] 需要进行滑块验证!\n")
-                    .Text($"请在打开的窗口内进行验证, 或打开以下链接:\n")
-                    .Text($"{eventSource.SliderUrl}\n")
-                    .Text($"在验证前请打开浏览器开发者工具, 验证完成后, 找到尾部为\"cap_union_new_verify\"的网络请求.\n")
-                    .Text($"点击请求, 在响应面板中找到名为\"ticket\"的值, 完整复制并粘贴到下面的命令中.")
-                    .Text($"发送 /SliderCaptcha {bot.Uin} ticket 进行验证.")
+                    .Text($"请选择验证方法:\n")
+                    .Text($"自动获取验证结果 /StartCaptcha Auto {bot.Uin}\n")
+                    .Text($"手动提交验证结果 /StartCaptcha Ticket {bot.Uin} \n")
                 );
-                try
-                {
-                    await new BrowserFetcher().DownloadAsync(BrowserFetcher.DefaultChromiumRevision);
-                }
-                catch (Exception)
-                {
-                    Console.WriteLine("下载用于进行滑块验证的浏览器时出现问题, 请确认您是否能够访问https://storage.googleapis.com");
-                    break;
-                }
-                Console.WriteLine("需要进行滑块验证, 请在打开的窗口内进行验证!");
-                var browser = await Puppeteer.LaunchAsync(new LaunchOptions()
-                {
-                    Headless = false,
-                    DefaultViewport = new ViewPortOptions(),
-                    Args = new string[] {
-                                "--disable-features=site-per-process",
-                                "--window-size=300,550",
-                                eventSource.SliderUrl
-                            }
-                });
-                t = new Timer((b) => {
-                    (b as Browser).CloseAsync();
-                    t.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
-                }, browser, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
-                t.Change(0, 300000);
-                (await browser.PagesAsync())[0].Response += async (page, e) =>
-                {
-                    if (e.Response.Url.Contains("cap_union_new_verify"))
-                    {
-                        var Response = await e.Response.JsonAsync();
-                        if (Response.Value<int>("errorCode") == 0)
-                        {
-                            if (bot.SubmitSliderTicket(Response.Value<string>("ticket")))
-                            {
-                                Console.WriteLine("验证成功");
-                            }
-                            else
-                            {
-                                Console.WriteLine("验证失败");
-                            }
-                            await browser.CloseAsync();
-                        }
-                    }
-                };
                 break;
             default:
             case CaptchaEvent.CaptchaType.Unknown:
