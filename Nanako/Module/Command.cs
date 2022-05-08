@@ -36,7 +36,7 @@ public static class Command
                     "ping" => OnCommandPing(textChain),
                     "status" => OnCommandStatus(textChain),
                     "echo" => OnCommandEcho(textChain, eventSource.Chain),
-                    "addbot" => OnCommandAddBot(Command[1], Command[2]),
+                    "addbot" => await OnCommandAddBot(Command[1], Command[2]),
                     "Captcha" => OnCommandCaptcha(Command[1], Command[2], Command[3]),
                     "StartCaptcha" => await OnCommandStartCaptchaAsync(Command[1], Command[2]),
                     _ => new MessageBuilder().Text("Unknown command")
@@ -92,7 +92,14 @@ public static class Command
                             var Response = await e.Response.JsonAsync();
                             if (Response.Value<int>("errorCode") == 0)
                             {
-                                _ = bot.SubmitSliderTicket(Response.Value<string>("ticket")) ? await MainBot.SendFriendMessage(Program.Config.Owner, new MessageBuilder().Text($"{bot.Uin} 验证成功\n")) : await MainBot.SendFriendMessage(Program.Config.Owner, new MessageBuilder().Text($"{bot.Uin} 验证失败\n"));
+                                if (bot.SubmitSliderTicket(Response.Value<string>("ticket")))
+                                {
+                                    await MainBot.SendFriendMessage(Program.Config.Owner, new MessageBuilder().Text($"{bot.Uin} 验证成功\n"));
+                                }
+                                else
+                                {
+                                    await MainBot.SendFriendMessage(Program.Config.Owner, new MessageBuilder().Text($"{bot.Uin} 验证失败\n"));
+                                }
                                 await browser.CloseAsync();
                             }
                         }
@@ -195,9 +202,9 @@ public static class Command
     /// </summary>
     /// <param name="chain"></param>
     /// <returns></returns>
-    public static MessageBuilder OnCommandAddBot(string account, string password)
+    public static async Task<MessageBuilder> OnCommandAddBot(string account, string password)
     {
-        return new MessageBuilder().Text(Program.AddBot(account, password));
+        return new MessageBuilder().Text(await Program.AddBotAsync(account, password));
     }
     /// <summary>
     /// On help

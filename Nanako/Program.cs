@@ -6,7 +6,6 @@ using Konata.Core.Interfaces;
 using Konata.Core.Interfaces.Api;
 using Konata.Core.Message;
 using Nanako.Module;
-using PuppeteerSharp;
 using Nanako.Utils;
 
 namespace Nanako;
@@ -33,33 +32,28 @@ public class Config
     };
     public List<BotConfig> ConfigList { get; set; }
     public uint Owner { get; set; }
-    public Config(uint owner)
+    public Config()
     {
-        ConfigList = new();
-        Owner = owner;
+
     }
 
 }
 
 public static class Program
 {
-    public static Config Config;
-    public static List<Bot> BotList;
-    public static uint messageCounter;
-    public static List<(Bot bot, CaptchaEvent eventSource)> NeedCaptchaBotList;
+    public static Config Config = GetConfig();
+    public static List<Bot> BotList = new();
+    public static uint messageCounter = 0;
+    public static List<(Bot bot, CaptchaEvent eventSource)> NeedCaptchaBotList = new();
 
-
-    private static T? DeserializeFile<T>(string path)
+    private static T? DeserializeFile<T>(string path) where T : new()
     {
         if (File.Exists(path))
         {
             T? data;
-            if ((data = JsonConvert.DeserializeObject<T>(File.ReadAllText(path))) != null)
-            {
-                return data;
-            }
+            return (data = JsonConvert.DeserializeObject<T>(File.ReadAllText(path))) != null ? data : new T();
         }
-        return default;
+        return new T();
     }
 
     /// <summary>
@@ -95,8 +89,12 @@ public static class Program
                             bot.Config = Config;
                         }
                     }
+                    return configData;
                 }
-                return configData;
+                else
+                {
+                    configData.ConfigList = new();
+                }
             }
         }
         catch (Exception)
@@ -104,9 +102,10 @@ public static class Program
             Console.WriteLine("Error in config.json, initialization");
         }
         Console.Write("first start, please type owner account:");
-        var config = new Config(Convert.ToUInt32(Console.ReadLine()));
-        File.WriteAllText($"config.json", JsonConvert.SerializeObject(config, Formatting.Indented));
-        return config;
+        return new Config() {
+            Owner = Convert.ToUInt32(Console.ReadLine()),
+            ConfigList = new List<Config.BotConfig>()
+        };
     }
 
 
@@ -115,7 +114,7 @@ public static class Program
     /// </summary>
     /// <param name="bot"></param>
     /// <returns></returns>
-    private static async void Autologin(Bot? bot)
+    private static async Task Autologin(Bot? bot)
     {
         if (bot != null)
         {
@@ -153,7 +152,7 @@ public static class Program
                         config.KeyStore = new BotKeyStore(bot.KeyStore.Account.Uin.ToString(), Console.ReadLine());
                         BotList.Remove(bot);
                         BotList.Add(BotFather.Create(config.Config, config.Device, config.KeyStore));
-                        Autologin(BotList.Find(p => p.Uin == config.KeyStore.Account.Uin));
+                        await Autologin(BotList.Find(p => p.Uin == config.KeyStore.Account.Uin));
                     }
                     UpdateKeyStore(bot);
                 }
@@ -175,6 +174,13 @@ public static class Program
     /// <summary>
     /// Update Config 
     /// </summary>
+    private static void UpdateConfig()
+    {
+        File.WriteAllText($"config.json", JsonConvert.SerializeObject(Config, Formatting.Indented));
+    }
+    /// <summary>
+    /// Update Config 
+    /// </summary>
     private static void UpdateConfig(uint bot, BotConfig botConfig)
     {
         File.WriteAllText($"Data/{bot}_config.json", JsonConvert.SerializeObject(botConfig, Formatting.Indented));
@@ -186,7 +192,7 @@ public static class Program
     {
         File.WriteAllText($"Data/{bot}_device.json", JsonConvert.SerializeObject(botDevice, Formatting.Indented));
     }
-    public static string AddBot(string account, string password)
+    public static async Task<string> AddBotAsync(string account, string password)
     {
         if (Config.ConfigList.FindAll(p => p.BotId.ToString() == account).Count == 0)
         {
@@ -198,12 +204,12 @@ public static class Program
                 Device = BotDevice.Default(),
                 KeyStore = new BotKeyStore(account, password)
             };
-            Config.ConfigList.Add(botConfig);
-            BotList.Add(BotFather.Create(botConfig.Config, botConfig.Device, botConfig.KeyStore));
             UpdateConfig(botConfig.KeyStore.Account.Uin, botConfig.Config);
             UpdateDevice(botConfig.KeyStore.Account.Uin, botConfig.Device);
-            File.WriteAllText($"config.json", JsonConvert.SerializeObject(Config, Formatting.Indented));
-            Autologin(BotList.Find(p => p.Uin.ToString() == account));
+            UpdateConfig();
+            Config.ConfigList.Add(botConfig);
+            BotList.Add(BotFather.Create(botConfig.Config, botConfig.Device, botConfig.KeyStore));
+            await Autologin(BotList.Find(p => p.Uin.ToString() == account));
             return "Add bot complete.";
         }
         else
@@ -213,11 +219,7 @@ public static class Program
     }
     public static void Main(string[] args)
     {
-        Config = GetConfig();
-        BotList = new List<Bot>();
-        messageCounter = 0;
-        NeedCaptchaBotList = new List<(Bot bot, CaptchaEvent eventSource)>();
-
+        UpdateConfig();
         if (Config.ConfigList.Count < 1)
         {
             Console.WriteLine("For bot first login, please " +
@@ -235,10 +237,10 @@ public static class Program
                 KeyStore = new BotKeyStore(account, password)
             };
             Config.ConfigList.Add(botConfig);
-            BotList.Add(BotFather.Create(botConfig.Config, botConfig.Device, botConfig.KeyStore));
             UpdateConfig(botConfig.KeyStore.Account.Uin, botConfig.Config);
             UpdateDevice(botConfig.KeyStore.Account.Uin, botConfig.Device);
-            File.WriteAllText($"config.json", JsonConvert.SerializeObject(Config, Formatting.Indented));
+            UpdateConfig();
+            BotList.Add(BotFather.Create(botConfig.Config, botConfig.Device, botConfig.KeyStore));
         }
         foreach (var bot in Config.ConfigList.Where(bot=> bot.Config != null && bot.Device != null && bot.KeyStore != null))
         {
@@ -246,12 +248,11 @@ public static class Program
         }
         foreach (Bot bot in BotList)
         {
-            Autologin(bot);
+           Autologin(bot);
         }
-        Console.WriteLine("OK");
         while (true)
         {
-            string? input= Console.ReadLine();
+            string? input= Console.ReadLine()?.Trim();
             if (input != null && input.Length > 0)
             {
                 var Command = new Commands<string>(input);
@@ -259,7 +260,7 @@ public static class Program
                 {
                     case "stop":
                         BotStop();
-                        File.WriteAllText($"config.json", JsonConvert.SerializeObject(Config, Formatting.Indented));
+                        UpdateConfig();
                         return;
                     default:
                         Console.WriteLine("Unknown command");
