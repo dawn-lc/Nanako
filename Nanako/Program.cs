@@ -46,14 +46,10 @@ public static class Program
     public static uint messageCounter = 0;
     public static List<(Bot bot, CaptchaEvent eventSource)> NeedCaptchaBotList = new();
 
-    private static T? DeserializeFile<T>(string path) where T : new()
+    private static T DeserializeFile<T>(string path) where T : new()
     {
-        if (File.Exists(path))
-        {
-            T? data;
-            return (data = JsonConvert.DeserializeObject<T>(File.ReadAllText(path))) != null ? data : new T();
-        }
-        return new T();
+        T? data;
+        return File.Exists(path) ? (data = JsonConvert.DeserializeObject<T>(File.ReadAllText(path))) != null ? data : new T() : new T();
     }
 
     /// <summary>
@@ -192,6 +188,26 @@ public static class Program
     {
         File.WriteAllText($"Data/{bot}_device.json", JsonConvert.SerializeObject(botDevice, Formatting.Indented));
     }
+    public static void EnableBot(Bot bot)
+    {
+        Config.BotConfig? botConfig;
+        if ((botConfig = Config.ConfigList.Find(p => p.BotId == bot.Uin)) != null)
+        {
+            botConfig.Enable = true;
+        }
+        UpdateConfig();
+        Autologin(bot);
+    }
+    public static void DisableBot(Bot bot)
+    {
+        Config.BotConfig? botConfig;
+        if ((botConfig = Config.ConfigList.Find(p => p.BotId == bot.Uin)) != null)
+        {
+            botConfig.Enable = false;
+        }
+        UpdateConfig();
+        bot.Logout();
+    }
     public static async Task<string> AddBotAsync(string account, string password)
     {
         if (Config.ConfigList.FindAll(p => p.BotId.ToString() == account).Count == 0)
@@ -296,7 +312,7 @@ public static class Program
                     new MessageBuilder()
                     .Text($"[{bot.Uin}] 需要进行短信验证!\n")
                     .Text($"绑定手机号为: {eventSource.Phone} 请检查是否收到验证码!\n")
-                    .Text($"收到验证码后请发送 /Captcha SMS {bot.Uin} 验证码 进行验证.")
+                    .Text($"收到验证码后请发送 /captcha SMS {bot.Uin} 验证码 进行验证.")
                 );
                 break;
             case CaptchaEvent.CaptchaType.Slider:
@@ -305,8 +321,8 @@ public static class Program
                     new MessageBuilder()
                     .Text($"[{bot.Uin}] 需要进行滑块验证!\n")
                     .Text($"请选择验证方法:\n")
-                    .Text($"自动获取验证结果 /StartCaptcha Auto {bot.Uin}\n")
-                    .Text($"手动提交验证结果 /StartCaptcha Ticket {bot.Uin} \n")
+                    .Text($"自动获取验证结果 /startcaptcha Auto {bot.Uin}\n")
+                    .Text($"手动提交验证结果 /startcaptcha Ticket {bot.Uin} \n")
                 );
                 break;
             default:

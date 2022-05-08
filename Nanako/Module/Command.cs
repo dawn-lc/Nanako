@@ -22,36 +22,41 @@ public static class Command
     /// <param name="eventSource"></param>
     internal static async void OnFriendMessage(Bot bot, FriendMessageEvent eventSource)
     {
-        var textChain = eventSource.Chain.GetChain<TextChain>();
-        if (textChain is null) return;
-        Console.WriteLine("[{0}({1})]:<{2}({3})>{4}", bot.Name, bot.Uin, eventSource.GetType().Name, eventSource.FriendUin, textChain);
-        try
+        if (eventSource.FriendUin == bot.Uin) return;
+        foreach (var item in eventSource.Chain.Where(p => p.Type == BaseChain.ChainType.Text))
         {
-            if (textChain.Content.TrimStart()[0] == '/')
+            if (item is not TextChain textChain) return;
+            Console.WriteLine("[{0}({1})]:<{2}({3})>{4}", bot.Name, bot.Uin, eventSource.GetType().Name, eventSource.FriendUin, textChain);
+            try
             {
-                var Command = new Commands<string>(textChain.Content.Trim());
-                if (!await bot.SendFriendMessage(eventSource.FriendUin, Command[0][1..] switch
+                if (textChain.Content.Trim()[0] == '/')
                 {
-                    "help" => OnCommandHelp(textChain),
-                    "ping" => OnCommandPing(textChain),
-                    "status" => OnCommandStatus(textChain),
-                    "echo" => OnCommandEcho(textChain, eventSource.Chain),
-                    "addbot" => await OnCommandAddBot(Command[1], Command[2]),
-                    "Captcha" => OnCommandCaptcha(Command[1], Command[2], Command[3]),
-                    "StartCaptcha" => await OnCommandStartCaptchaAsync(Command[1], Command[2]),
-                    _ => new MessageBuilder().Text("Unknown command")
-                }))
-                {
-                    Console.WriteLine("发送失败! ");
+                    var Command = new Commands<string>(textChain.Content.Trim());
+                    if (!await bot.SendFriendMessage(eventSource.FriendUin, Command[0][1..] switch
+                    {
+                        "help" => OnCommandHelp(textChain),
+                        "ping" => OnCommandPing(textChain),
+                        "status" => OnCommandStatus(textChain),
+                        "echo" => OnCommandEcho(textChain, eventSource.Chain),
+                        "addbot" => eventSource.FriendUin == Program.Config.Owner ? await OnCommandAddBot(Command[1], Command[2]) : new MessageBuilder().Text("No permission to use this command."),
+                        "captcha" => eventSource.FriendUin == Program.Config.Owner ? OnCommandCaptcha(Command[1], Command[2], Command[3]) : new MessageBuilder().Text("No permission to use this command."),
+                        "startcaptcha" => eventSource.FriendUin == Program.Config.Owner ? await OnCommandStartCaptchaAsync(Command[1], Command[2]) : new MessageBuilder().Text("No permission to use this command."),
+                        "enablebot" => eventSource.FriendUin == Program.Config.Owner ? OnCommandEnableBot(Command[1]) : new MessageBuilder().Text("No permission to use this command."),
+                        "disablebot" => eventSource.FriendUin == Program.Config.Owner ? OnCommandDisableBot(Command[1]) : new MessageBuilder().Text("No permission to use this command."),
+                        _ => new MessageBuilder().Text("Unknown command")
+                    }))
+                    {
+                        Console.WriteLine("发送失败! ");
+                    }
                 }
             }
-        }
-        catch (Exception e)
-        {
-            Console.WriteLine(e.Message);
-            Console.WriteLine(e.StackTrace);
-            await bot.SendFriendMessage(eventSource.FriendUin,
-                Text($"{e.Message}\n{e.StackTrace}"));
+            catch (Exception e)
+            {
+                Console.WriteLine(e.Message);
+                Console.WriteLine(e.StackTrace);
+                await bot.SendFriendMessage(eventSource.FriendUin,
+                    Text($"{e.Message}"));
+            }
         }
         ++Program.messageCounter;
     }
@@ -110,7 +115,7 @@ public static class Command
                         .Text($"浏览器打开链接:{eventSource.SliderUrl}\n")
                         .Text($"在验证前请打开浏览器开发者工具, 验证完成后, 找到尾部为\"cap_union_new_verify\"的网络请求.\n")
                         .Text($"点击请求, 在响应面板中找到名为\"ticket\"的值, 完整复制并粘贴到下面的命令中.")
-                        .Text($"发送 /Captcha Slider {bot.Uin} 获取到的值 进行验证.");
+                        .Text($"发送 /captcha Slider {bot.Uin} 获取到的值 进行验证.");
                 default:
                     return new MessageBuilder().Text("未知的验证码类型");
             }
@@ -140,41 +145,53 @@ public static class Command
     internal static async void OnGroupMessage(Bot bot, GroupMessageEvent eventSource)
     {
         if (eventSource.MemberUin == bot.Uin) return;
-        var textChain = eventSource.Chain.GetChain<TextChain>();
-        if (textChain is null) return;
-        Console.WriteLine("[{0}({1})]:<{2}({3})>{4}", bot.Name, bot.Uin, eventSource.GroupName, eventSource.GroupUin, textChain);
-
-        try
+        foreach (var item in eventSource.Chain.Where(p => p.Type == BaseChain.ChainType.Text))
         {
-            if (textChain.Content.TrimStart()[0] == '/')
+            if (item is not TextChain textChain) return;
+            if (textChain == null) return;
+            Console.WriteLine("[{0}({1})]:<{2}({3})>{4}", bot.Name, bot.Uin, eventSource.GroupName, eventSource.GroupUin, textChain);
+            try
             {
-                var Command = new Commands<string>(textChain.Content.Trim());
-                if (!await bot.SendGroupMessage(eventSource.GroupUin, Command[0][1..] switch
+                if (textChain.Content.Trim()[0] == '/')
                 {
-                    "help" => OnCommandHelp(textChain),
-                    "ping" => OnCommandPing(textChain),
-                    "status" => OnCommandStatus(textChain),
-                    "echo" => OnCommandEcho(textChain, eventSource.Chain),
-                    "eval" => await GetPermAsync(bot, eventSource.GroupUin, eventSource.MemberUin) > RoleType.Member ? OnCommandEval(eventSource.Chain) : new MessageBuilder().Text("No permission to use this command."),
-                    "member" => (await bot.GetGroupMemberInfo(eventSource.GroupUin, eventSource.MemberUin)).Role > RoleType.Member ? await OnCommandMemberInfo(bot, eventSource) : new MessageBuilder().Text("No permission to use this command."),
-                    "mute" => await GetPermAsync(bot, eventSource.GroupUin, eventSource.MemberUin) > RoleType.Member && await GetBotPermAsync(bot, eventSource.GroupUin) > RoleType.Member ? await OnCommandMuteMember(bot, eventSource) : new MessageBuilder().Text("No permission to use this command."),
-                    "title" => await GetPermAsync(bot, eventSource.GroupUin, eventSource.MemberUin) > RoleType.Member && await GetBotPermAsync(bot, eventSource.GroupUin) > RoleType.Member ? await OnCommandSetTitle(bot, eventSource) : new MessageBuilder().Text("No permission to use this command."),
-                    _ => new MessageBuilder().Text("Unknown command")
-                }))
-                {
-                    Console.WriteLine("发送失败! ");
+                    var Command = new Commands<string>(textChain.Content.Trim());
+                    if (!await bot.SendGroupMessage(eventSource.GroupUin, Command[0][1..] switch
+                    {
+                        "help" => OnCommandHelp(textChain),
+                        "ping" => OnCommandPing(textChain),
+                        "status" => OnCommandStatus(textChain),
+                        "echo" => OnCommandEcho(textChain, eventSource.Chain),
+                        "eval" => await GetPermAsync(bot, eventSource.GroupUin, eventSource.MemberUin) > RoleType.Member ? OnCommandEval(eventSource.Chain) : new MessageBuilder().Text("No permission to use this command."),
+                        "member" => (await bot.GetGroupMemberInfo(eventSource.GroupUin, eventSource.MemberUin)).Role > RoleType.Member ? await OnCommandMemberInfo(bot, eventSource) : new MessageBuilder().Text("No permission to use this command."),
+                        "mute" => await GetPermAsync(bot, eventSource.GroupUin, eventSource.MemberUin) > RoleType.Member && await GetBotPermAsync(bot, eventSource.GroupUin) > RoleType.Member ? await OnCommandMuteMember(bot, eventSource) : new MessageBuilder().Text("No permission to use this command."),
+                        "title" => await GetPermAsync(bot, eventSource.GroupUin, eventSource.MemberUin) > RoleType.Member && await GetBotPermAsync(bot, eventSource.GroupUin) > RoleType.Member ? await OnCommandSetTitle(bot, eventSource) : new MessageBuilder().Text("No permission to use this command."),
+                        _ => new MessageBuilder().Text("Unknown command")
+                    }))
+                    {
+                        Console.WriteLine("发送失败! ");
+                    }
                 }
             }
-        }
-        catch (Exception e)
-        {
-            Console.WriteLine(e.Message);
-            Console.WriteLine(e.StackTrace);
-            await bot.SendGroupMessage(eventSource.GroupUin, Text($"{e.Message}\n{e.StackTrace}"));
+            catch (Exception e)
+            {
+                Console.WriteLine(e.Message);
+                Console.WriteLine(e.StackTrace);
+                await bot.SendGroupMessage(eventSource.GroupUin, Text($"{e.Message}"));
+            }
         }
         ++Program.messageCounter;
     }
-
+    public static MessageBuilder OnCommandEnableBot(string bot)
+    {
+        Program.EnableBot(Program.BotList.Find(p => p.Uin.ToString() == bot));
+        return new MessageBuilder().Text("OK");
+    }
+    public static MessageBuilder OnCommandDisableBot(string bot)
+    {
+        Program.DisableBot(Program.BotList.Find(p => p.Uin.ToString() == bot));
+        return new MessageBuilder().Text("OK");
+    }
+    
     /// <summary>
     /// Get target in group permission
     /// </summary>
