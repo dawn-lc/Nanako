@@ -1,4 +1,6 @@
 ﻿using System.Collections;
+using System.Linq;
+using System.Net.Http.Headers;
 
 namespace Nanako.Utils
 {
@@ -49,6 +51,53 @@ namespace Nanako.Utils
         IEnumerator IEnumerable.GetEnumerator()
         {
             return GetEnumerator();
+        }
+    }
+    internal static class Http
+    {
+        static readonly TimeSpan DefaultTimeout = new(0,0,1,0);
+        public static HttpClient Constructor(Dictionary<string, IEnumerable<string>>? head, TimeSpan? timeout)
+        {
+            HttpClient Client = new();
+            Client.DefaultRequestHeaders.Clear();
+            Client.Timeout = timeout ?? DefaultTimeout;
+            if (head != null)
+            {
+                foreach (var item in head)
+                {
+                    Client.DefaultRequestHeaders.Add(item.Key, item.Value);
+                }
+            }
+            return Client;
+        }
+        public static async Task<HttpResponseMessage> GetAsync(Uri url, Dictionary<string, IEnumerable<string>>? head = null, TimeSpan? timeout = null)
+        {
+            return await Constructor(head, timeout).GetAsync(url);
+        }
+        public static async Task<HttpResponseMessage> PostAsync(Uri url, HttpContent content, Dictionary<string, IEnumerable<string>>? head = null, TimeSpan? timeout = null)
+        {
+            return await Constructor(head, timeout).PostAsync(url, content);
+        }
+        public static async Task<HttpResponseMessage> PatchAsync(Uri url, HttpContent content, Dictionary<string, IEnumerable<string>>? head = null, TimeSpan? timeout = null)
+        {
+            return await Constructor(head, timeout).PatchAsync(url, content);
+        }
+        public static async Task<HttpResponseMessage> PutAsync(Uri url, HttpContent content, Dictionary<string, IEnumerable<string>>? head = null, TimeSpan? timeout = null)
+        {
+            return await Constructor(head, timeout).PutAsync(url, content);
+        }
+        public static HttpRequestMessage CreateRequest(Uri url, HttpMethod method, HttpContent? content)
+        {
+            return new HttpRequestMessage()
+            {
+                RequestUri = url,
+                Method = method,
+                Content = content,
+            };
+        }
+        public static async Task<HttpResponseMessage> SendAsync(HttpRequestMessage Request, Dictionary<string, IEnumerable<string>>? head = null, TimeSpan? timeout = null)
+        {
+            return await Constructor(head, timeout).SendAsync(Request);
         }
     }
     internal static class Utils

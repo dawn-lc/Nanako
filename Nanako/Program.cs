@@ -7,6 +7,7 @@ using Konata.Core.Interfaces.Api;
 using Konata.Core.Message;
 using Nanako.Module;
 using Nanako.Utils;
+using Sentry;
 
 namespace Nanako;
 
@@ -58,50 +59,72 @@ public static class Program
     /// <returns></returns>
     private static Config GetConfig()
     {
-        if (!Directory.Exists("Account")) Directory.CreateDirectory("Account");
-        if (!Directory.Exists("Data")) Directory.CreateDirectory("Data");
+        Config? configData = null;
         try
         {
-            Config? configData = DeserializeFile<Config>("config.json");
-            if (configData != null)
+            if (!Directory.Exists("Account")) Directory.CreateDirectory("Account");
+            if (!Directory.Exists("Data")) Directory.CreateDirectory("Data");
+            if (!Directory.Exists("Cache")) Directory.CreateDirectory("Cache");
+            configData = DeserializeFile<Config>("config.json");
+            if (configData.ConfigList != null && configData.ConfigList.Count > 0)
             {
-                if (configData.ConfigList != null && configData.ConfigList.Count > 0)
+                foreach (var bot in configData.ConfigList)
                 {
-                    foreach (var bot in configData.ConfigList)
+                    if (!Directory.Exists($"Cache/{bot.BotId}")) Directory.CreateDirectory($"Cache/{bot.BotId}");
+                    BotKeyStore? KeyStore;
+                    if ((KeyStore = DeserializeFile<BotKeyStore>($"Account/{bot.BotId}.json")) != null)
                     {
-                        BotKeyStore? KeyStore;
-                        if ((KeyStore = DeserializeFile<BotKeyStore>($"Account/{bot.BotId}.json")) != null)
-                        {
-                            bot.KeyStore = KeyStore;
-                        }
-                        BotDevice? Device;
-                        if ((Device = DeserializeFile<BotDevice>($"Data/{bot.BotId}_device.json")) != null)
-                        {
-                            bot.Device = Device;
-                        }
-                        BotConfig? Config;
-                        if ((Config = DeserializeFile<BotConfig>($"Data/{bot.BotId}_config.json")) != null)
-                        {
-                            bot.Config = Config;
-                        }
+                        bot.KeyStore = KeyStore;
                     }
-                    return configData;
+                    BotDevice? Device;
+                    if ((Device = DeserializeFile<BotDevice>($"Data/{bot.BotId}_device.json")) != null)
+                    {
+                        bot.Device = Device;
+                    }
+                    BotConfig? Config;
+                    if ((Config = DeserializeFile<BotConfig>($"Data/{bot.BotId}_config.json")) != null)
+                    {
+                        bot.Config = Config;
+                    }
                 }
-                else
-                {
-                    configData.ConfigList = new();
-                }
+                return configData;
+            }
+            else
+            {
+                throw new Exception("Robot configuration list not found!");
             }
         }
-        catch (Exception)
+        catch (IOException ex)
         {
-            Console.WriteLine("Error in config.json, initialization");
+            SentrySdk.CaptureException(ex);
+            Console.WriteLine(ex);
+            Thread.Sleep(10000);
+            Environment.Exit(1);
         }
-        Console.Write("first start, please type owner account:");
-        return new Config() {
-            Owner = Convert.ToUInt32(Console.ReadLine()),
-            ConfigList = new List<Config.BotConfig>()
-        };
+        catch (Exception ex)
+        {
+            configData = null;
+            Console.WriteLine(ex.Message);
+            Console.WriteLine("initializing...");
+        }
+        while (configData == null)
+        {
+            try
+            {
+                Console.Write("please type owner account:");
+                configData = new Config()
+                {
+                    Owner = Convert.ToUInt32(Console.ReadLine()),
+                    ConfigList = new List<Config.BotConfig>()
+                };
+            }
+            catch (Exception)
+            {
+                Console.WriteLine("initializing...");
+                configData = null;
+            }
+        }
+        return configData;
     }
 
 
@@ -120,6 +143,7 @@ public static class Program
                 await bot.Logout();
                 bot.Dispose();
                 BotList.Remove(bot);
+                SentrySdk.CaptureException(new Exception("Bot config failed."));
                 Console.WriteLine("Bot config failed.");
             }
             else
@@ -156,7 +180,8 @@ public static class Program
         }
         else
         {
-            Console.WriteLine("Login failed, bot is null");
+            SentrySdk.CaptureException(new Exception("Login failed, bot is null."));
+            Console.WriteLine("Login failed, bot is null.");
         }
     }
 
@@ -222,10 +247,10 @@ public static class Program
             };
             UpdateConfig(botConfig.KeyStore.Account.Uin, botConfig.Config);
             UpdateDevice(botConfig.KeyStore.Account.Uin, botConfig.Device);
-            UpdateConfig();
             Config.ConfigList.Add(botConfig);
             BotList.Add(BotFather.Create(botConfig.Config, botConfig.Device, botConfig.KeyStore));
             await Autologin(BotList.Find(p => p.Uin.ToString() == account));
+            UpdateConfig();
             return "Add bot complete.";
         }
         else
@@ -233,54 +258,92 @@ public static class Program
             return "Bot " + account + " already exists!";
         }
     }
+    private static void Initialization()
+    {
+        if (new DirectoryInfo("Account").GetFiles().Any())
+        {
+            if (Config.ConfigList==null) Config.ConfigList = new();
+            foreach (var item in new DirectoryInfo("Account").GetFiles())
+            {
+                Config.BotConfig bot = new()
+                {
+                    Enable = true
+                };
+                BotKeyStore? BotKeyStore;
+                if ((BotKeyStore = DeserializeFile<BotKeyStore>(item.FullName)) != null)
+                {
+                    bot.BotId = BotKeyStore.Account.Uin;
+                    bot.KeyStore = BotKeyStore;
+                }
+                BotDevice? BotDevice;
+                if ((BotDevice = DeserializeFile<BotDevice>($"Data/{bot.BotId}_device.json")) != null)
+                {
+                    bot.Device = BotDevice;
+                }
+                BotConfig? BotConfig;
+                if ((BotConfig = DeserializeFile<BotConfig>($"Data/{bot.BotId}_config.json")) != null)
+                {
+                    bot.Config = BotConfig;
+                }
+                Config.ConfigList.Add(bot);
+            }
+            UpdateConfig();
+            return;
+        }
+        Console.WriteLine("For bot first login, please " +
+                          "type your account and password.");
+        Console.Write("Account: ");
+        var account = Console.ReadLine();
+        Console.Write("Password: ");
+        var password = Console.ReadLine();
+        Config.BotConfig botConfig = new()
+        {
+            Enable = true,
+            BotId = Convert.ToUInt32(account),
+            Config = Config.GlobalConfig,
+            Device = BotDevice.Default(),
+            KeyStore = new BotKeyStore(account, password)
+        };
+        Config.ConfigList.Add(botConfig);
+        UpdateConfig(botConfig.KeyStore.Account.Uin, botConfig.Config);
+        UpdateDevice(botConfig.KeyStore.Account.Uin, botConfig.Device);
+        UpdateConfig();
+        BotList.Add(BotFather.Create(botConfig.Config, botConfig.Device, botConfig.KeyStore));
+        
+    }
     public static void Main(string[] args)
     {
-        UpdateConfig();
-        if (Config.ConfigList.Count < 1)
+        using (SentrySdk.Init(o =>
         {
-            Console.WriteLine("For bot first login, please " +
-                          "type your account and password.");
-            Console.Write("Account: ");
-            var account = Console.ReadLine();
-            Console.Write("Password: ");
-            var password = Console.ReadLine();
-            Config.BotConfig botConfig = new()
+            o.Dsn = "https://ab8d4959bf0440e1be8c1945a7ed8a28@o687854.ingest.sentry.io/6427927";
+            o.TracesSampleRate = 1.0;
+        }))
+        {
+            if (Config.ConfigList.Count < 1) Initialization();
+            foreach (var bot in Config.ConfigList.Where(bot => bot.Config != null && bot.Device != null && bot.KeyStore != null))
             {
-                Enable = true,
-                BotId = Convert.ToUInt32(account),
-                Config = Config.GlobalConfig,
-                Device = BotDevice.Default(),
-                KeyStore = new BotKeyStore(account, password)
-            };
-            Config.ConfigList.Add(botConfig);
-            UpdateConfig(botConfig.KeyStore.Account.Uin, botConfig.Config);
-            UpdateDevice(botConfig.KeyStore.Account.Uin, botConfig.Device);
-            UpdateConfig();
-            BotList.Add(BotFather.Create(botConfig.Config, botConfig.Device, botConfig.KeyStore));
-        }
-        foreach (var bot in Config.ConfigList.Where(bot=> bot.Config != null && bot.Device != null && bot.KeyStore != null))
-        {
-            BotList.Add(BotFather.Create(bot.Config, bot.Device, bot.KeyStore));
-        }
-        foreach (Bot bot in BotList)
-        {
-           Autologin(bot);
-        }
-        while (true)
-        {
-            string? input= Console.ReadLine()?.Trim();
-            if (input != null && input.Length > 0)
+                BotList.Add(BotFather.Create(bot.Config, bot.Device, bot.KeyStore));
+            }
+            foreach (Bot bot in BotList)
             {
-                var Command = new Commands<string>(input);
-                switch (Command[0][1..])
+                Autologin(bot);
+            }
+            while (true)
+            {
+                string? input = Console.ReadLine()?.Trim();
+                if (input != null && input.Length > 0)
                 {
-                    case "stop":
-                        BotStop();
-                        UpdateConfig();
-                        return;
-                    default:
-                        Console.WriteLine("Unknown command");
-                        break;
+                    var Command = new Commands<string>(input);
+                    switch (Command[0][1..])
+                    {
+                        case "stop":
+                            BotStop();
+                            UpdateConfig();
+                            return;
+                        default:
+                            Console.WriteLine("Unknown command");
+                            break;
+                    }
                 }
             }
         }
@@ -327,7 +390,11 @@ public static class Program
                 break;
             default:
             case CaptchaEvent.CaptchaType.Unknown:
-                Console.WriteLine("无法处理的验证码!");
+                await MainBot.SendFriendMessage(Config.Owner,
+                    new MessageBuilder()
+                    .Text($"[{bot.Uin}] 遇到了无法处理的验证模式!\n")
+                    .Text($"请请等待后续功能更新。\n")
+                );
                 break;
         }
     }
