@@ -15,8 +15,6 @@ namespace Nanako.Module;
 
 public static class Command
 {
-    
-
     /// <summary>
     /// On friend message
     /// </summary>
@@ -24,7 +22,8 @@ public static class Command
     /// <param name="eventSource"></param>
     internal static void OnFriendMessage(Bot bot, FriendMessageEvent eventSource)
     {
-        if (Program.BotList.Find(p => p.Uin == eventSource.FriendUin) != null) return;
+        if (Program.BotList.Any(p => p.Uin == eventSource.FriendUin)) return;
+        if (Program.ChainTable[eventSource.Message.Sequence.ToString()] == null) Program.ChainTable.Add(eventSource.Message.Sequence.ToString(), eventSource.Message);
         foreach (var item in eventSource.Chain)
         {
             switch (item)
@@ -34,18 +33,14 @@ public static class Command
                     break;
                 case ImageChain Chain:
                     Console.WriteLine("[{0}({1})]:<{2}({3})>{4}[{5}]", bot.Name, bot.Uin, eventSource.GetType().Name, eventSource.FriendUin, Chain.FileHash, Chain.FileLength);
-                    if (!Directory.Exists($"Cache/{bot.Uin}/Image/Friend/{eventSource.FriendUin}/")) Directory.CreateDirectory($"Cache/{bot.Uin}/Image/Friend/{eventSource.FriendUin}/");
-                    Task.Run(() => {
-                        using FileStream file = new($"Cache/{bot.Uin}/Image/Friend/{eventSource.FriendUin}/{Chain.FileName}.{Chain.ImageType}", FileMode.Create, FileAccess.Write);
-                        if (Chain.FileData != null)
-                        {
-                            file.Write(Chain.FileData);
-                        }
-                        else
-                        {
+                    if (!File.Exists($"Cache/Image/{Chain.FileName}"))
+                    {
+                        Task.Run(() => {
+                            using FileStream file = new($"Cache/Image/{Chain.FileName}", FileMode.OpenOrCreate, FileAccess.Write);
+                            file.SetLength(0);
                             Http.GetAsync(new(Chain.ImageUrl)).Result.Content.CopyToAsync(file);
-                        }
-                    });
+                        });
+                    }
                     break;
                 default:
                     break;
@@ -56,6 +51,159 @@ public static class Command
             OnCommand(bot, eventSource);
         }
         ++Program.messageCounter;
+    }
+
+
+    /// <summary>
+    /// On group message
+    /// </summary>
+    /// <param name="bot"></param>
+    /// <param name="group"></param>
+    internal static void OnGroupMessage(Bot bot, GroupMessageEvent eventSource)
+    {
+        if (Program.BotList.Find(p => p.Uin == eventSource.MemberUin) != null) return;
+        if (Program.ChainTable[eventSource.Message.Sequence.ToString()] == null) Program.ChainTable.Add(eventSource.Message.Sequence.ToString(), eventSource.Message);
+        foreach (var item in eventSource.Chain)
+        {
+            switch (item)
+            {
+                case TextChain Chain:
+                    Console.WriteLine("[{0}({1})]:<{2}({3})>{4}", bot.Name, bot.Uin, eventSource.GroupName, eventSource.GroupUin, Chain);
+                    break;
+                case ImageChain Chain:
+                    Console.WriteLine("[{0}({1})]:<{2}({3})>{4}[{5}]", bot.Name, bot.Uin, eventSource.GroupName, eventSource.GroupUin, Chain.FileName, eventSource.Message.Sequence);
+                    if (!File.Exists($"Cache/Image/{Chain.FileName}"))
+                    {
+                        Task.Run(async () => {
+                            using FileStream file = new($"Cache/Image/{Chain.FileName}", FileMode.OpenOrCreate, FileAccess.Write);
+                            file.SetLength(0);
+                            await Http.GetAsync(new("https://gchat.qpic.cn" + Chain.ImageUrl)).Result.Content.CopyToAsync(file);
+                        });
+                    }
+                    break;
+                default:
+                    break;
+            }
+        }
+        if (eventSource.Chain.First() is TextChain text && text != null && text.Content != null && text.Content.Trim() != "" && text.Content.Trim()[0] == '/')
+        {
+            OnCommand(bot, eventSource);
+        }
+        if (eventSource.Chain.Any(p => p is ReplyChain reply) && eventSource.Chain.Any(p => p is AtChain at && at.AtUin == bot.Uin))
+        {
+            OnCommand(bot, eventSource);
+        }
+        ++Program.messageCounter;
+    }
+
+
+
+    public static async void OnCommand(Bot bot, ProtocolEvent eventSource)
+    {
+        switch (eventSource)
+        {
+            case GroupMessageEvent Message:  
+                if (Message.Chain.Any(p => p is ReplyChain reply) && Message.Chain.Any(p => p is AtChain at && at.AtUin == bot.Uin) && Message.Chain.Any(p => p is TextChain text && text.Content.Trim() != ""))
+                {
+                   var Command = Message.Chain.Where(p => p is TextChain text && text.Content.Trim() != "").First() as TextChain;
+                   switch (Command.Content.Trim())
+                    {
+                        case "搜图":
+                        case "searchimage":
+                            var test = Program.ChainTable[Util.GetArgs(Message.Chain.GetChain<ReplyChain>().ToString())["seq"]] as MessageStruct;
+                            if (Message.Chain.GetChain<ReplyChain>() is ReplyChain reply && Program.ChainTable[Util.GetArgs(reply.ToString())["seq"]] is MessageStruct replySource && replySource != null && replySource.Chain.FindChain<ImageChain>().Any() && replySource.Chain.FindChain<ImageChain>().First() is ImageChain imageChain)
+                            {
+                                bot.SendGroupMessage(Message.GroupUin, Text("开始搜索, 请稍后..."));
+                                bot.SendGroupMessage(Message.GroupUin, await OnCommandSearchImage(imageChain));
+                            }
+                            else
+                            {
+                                bot.SendGroupMessage(Message.GroupUin, Text("没有找到回复的消息记录"));
+                            }
+                            break;
+                        default:
+                            bot.SendGroupMessage(Message.GroupUin, Text("未知指令"));
+                            break;
+                    }
+                }
+                else if (Message.Chain.First() is TextChain GroupChain)
+                {
+                    var Command = new Commands<string>(GroupChain.Content.Trim());
+                    if (!await bot.SendGroupMessage(Message.GroupUin, Command[0][1..].ToLower() switch
+                    {
+                        "help" => OnCommandHelp(GroupChain),
+                        "ping" => OnCommandPing(GroupChain),
+                        "status" => OnCommandStatus(GroupChain),
+                        "echo" => OnCommandEcho(GroupChain, Message.Chain),
+                        "searchimage" => await OnCommandSearchImage(Message.Chain.FindChain<ImageChain>().First()),
+                        "搜图" => await OnCommandSearchImage(Message.Chain.FindChain<ImageChain>().First()),
+                        "eval" => await GetPermAsync(bot, Message.GroupUin, Message.MemberUin) > RoleType.Member ? OnCommandEval(Message.Chain) : Text("No permission to use this command."),
+                        "member" => (await bot.GetGroupMemberInfo(Message.GroupUin, Message.MemberUin)).Role > RoleType.Member ? await OnCommandMemberInfo(bot, Message) : Text("No permission to use this command."),
+                        "mute" => await GetPermAsync(bot, Message.GroupUin, Message.MemberUin) > RoleType.Member && await GetBotPermAsync(bot, Message.GroupUin) > RoleType.Member ? await OnCommandMuteMember(bot, Message) : Text("No permission to use this command."),
+                        "title" => await GetPermAsync(bot, Message.GroupUin, Message.MemberUin) > RoleType.Member && await GetBotPermAsync(bot, Message.GroupUin) > RoleType.Member ? await OnCommandSetTitle(bot, Message) : Text("No permission to use this command."),
+                        _ => Text("Unknown command")
+                    }))
+                    {
+                        Console.WriteLine("发送失败! ");
+                    }
+                }
+                break;
+            case FriendMessageEvent Message:
+                if (Message.Chain.Any(p => p is ReplyChain reply) && Message.Chain.Any(p => p is TextChain text && text.Content.Trim() != ""))
+                {
+                    var Command = Message.Chain.Where(p => p is TextChain text && text.Content.Trim() != "").First() as TextChain;
+                    switch (Command.Content.Trim())
+                    {
+                        case "搜图":
+                        case "searchimage":
+                            try
+                            {
+                                if (Program.ChainTable[Util.GetArgs(Message.Chain.FindChain<ReplyChain>().First().ToString())["seq"]] is MessageStruct reply && reply != null && reply.Chain.FindChain<ImageChain>().Any() && reply.Chain.FindChain<ImageChain>().First() is ImageChain imageChain)
+                                {
+                                    bot.SendFriendMessage(Message.FriendUin, Text("开始搜索, 请稍后..."));
+                                    bot.SendFriendMessage(Message.FriendUin, await OnCommandSearchImage(imageChain));
+                                }
+                                else
+                                {
+                                    bot.SendFriendMessage(Message.FriendUin, Text("没有找到回复的消息记录"));
+                                }
+                            }
+                            catch (Exception)
+                            {
+                                Console.WriteLine("没有找到回复的消息记录");
+                            }
+                            break;
+                        default:
+                            bot.SendFriendMessage(Message.FriendUin, Text("未知指令"));
+                            break;
+                    }
+                }
+                else if (Message.Chain.First() is TextChain FriendChain)
+                {
+                    var Command = new Commands<string>(FriendChain.Content.Trim());
+                    if (!await bot.SendFriendMessage(Message.FriendUin, Command[0][1..].ToLower() switch
+                    {
+                        "help" => OnCommandHelp(FriendChain),
+                        "ping" => OnCommandPing(FriendChain),
+                        "status" => OnCommandStatus(FriendChain),
+                        "echo" => OnCommandEcho(FriendChain, Message.Chain),
+                        "searchimage" => await OnCommandSearchImage(Message.Chain.FindChain<ImageChain>().First()),
+                        "搜图" => await OnCommandSearchImage(Message.Chain.FindChain<ImageChain>().First()),
+                        "addbot" => Message.FriendUin == Program.Config.Owner ? await OnCommandAddBot(Command[1], Command[2]) : Text("No permission to use this command."),
+                        "captcha" => Message.FriendUin == Program.Config.Owner ? OnCommandCaptcha(Command[1], Command[2], Command[3]) : Text("No permission to use this command."),
+                        "startcaptcha" => Message.FriendUin == Program.Config.Owner ? await OnCommandStartCaptchaAsync(Command[1], Command[2]) : Text("No permission to use this command."),
+                        "enablebot" => Message.FriendUin == Program.Config.Owner ? OnCommandEnableBot(Command[1]) : Text("No permission to use this command."),
+                        "disablebot" => Message.FriendUin == Program.Config.Owner ? OnCommandDisableBot(Command[1]) : Text("No permission to use this command."),
+                        _ => Text("Unknown command")
+                    }))
+                    {
+                        Console.WriteLine("发送失败! ");
+                    }
+                }
+                break;
+            default:
+                break;
+        }
     }
 
     private static async Task<MessageBuilder> OnCommandStartCaptchaAsync(string Type, string Bot)
@@ -119,7 +267,7 @@ public static class Command
         }
         return new MessageBuilder().Text("没有找到这个Bot");
     }
-    private static MessageBuilder OnCommandCaptcha(string Type, string Bot, string Captcha) 
+    private static MessageBuilder OnCommandCaptcha(string Type, string Bot, string Captcha)
     {
         Bot? OnCaptchaBot = Program.BotList.Find(b => !b.IsOnline() && b.Uin.ToString() == Bot);
         if (OnCaptchaBot != null)
@@ -133,105 +281,6 @@ public static class Command
         }
         return new MessageBuilder().Text("没有找到这个Bot");
     }
-
-    /// <summary>
-    /// On group message
-    /// </summary>
-    /// <param name="bot"></param>
-    /// <param name="group"></param>
-    internal static void OnGroupMessage(Bot bot, GroupMessageEvent eventSource)
-    {
-        if (Program.BotList.Find(p => p.Uin == eventSource.MemberUin) != null) return;
-        foreach (var item in eventSource.Chain)
-        {
-            switch (item)
-            {
-                case TextChain Chain:
-                    Console.WriteLine("[{0}({1})]:<{2}({3})>{4}", bot.Name, bot.Uin, eventSource.GroupName, eventSource.GroupUin, Chain);
-                    break;
-                case ImageChain Chain:
-                    Console.WriteLine("[{0}({1})]:<{2}({3})>{4}[{5}]", bot.Name, bot.Uin, eventSource.GroupName, eventSource.GroupUin, Chain.FileHash, Chain.FileLength);
-                    if (!Directory.Exists($"Cache/{bot.Uin}/Image/Group/{eventSource.GroupUin}/")) Directory.CreateDirectory($"Cache/{bot.Uin}/Image/Group/{eventSource.GroupUin}/");
-                    Task.Run(() => {
-                        using FileStream file = new($"Cache/{bot.Uin}/Image/Group/{eventSource.GroupUin}/{Chain.FileName}.{Chain.ImageType}", FileMode.Create, FileAccess.Write);
-                        if (Chain.FileData != null)
-                        {
-                            file.Write(Chain.FileData);
-                        }
-                        else
-                        {
-                            Http.GetAsync(new("https://gchat.qpic.cn" + Chain.ImageUrl)).Result.Content.CopyToAsync(file);
-                        }
-                    });
-                    break;
-                default:
-                    break;
-            }
-        }
-        if (eventSource.Chain.First() is TextChain text && text != null && text.Content != null && text.Content.Trim() != "" && text.Content.Trim()[0] == '/')
-        {
-            OnCommand(bot, eventSource);
-        }
-        ++Program.messageCounter;
-    }
-
-
-
-    public static async void OnCommand(Bot bot, ProtocolEvent eventSource)
-    {
-        switch (eventSource)
-        {
-            case GroupMessageEvent Message:
-                if (Message.Chain.First() is TextChain GroupChain) {
-                    var Command = new Commands<string>(GroupChain.Content.Trim());
-                    if (!await bot.SendGroupMessage(Message.GroupUin, Command[0][1..].ToLower() switch
-                    {
-                        "help" => OnCommandHelp(GroupChain),
-                        "ping" => OnCommandPing(GroupChain),
-                        "status" => OnCommandStatus(GroupChain),
-                        "echo" => OnCommandEcho(GroupChain, Message.Chain),
-                        "searchimage" => await OnCommandSearchImage(Message.Chain),
-                        "搜图" => await OnCommandSearchImage(Message.Chain),
-                        "eval" => await GetPermAsync(bot, Message.GroupUin, Message.MemberUin) > RoleType.Member ? OnCommandEval(Message.Chain) : Text("No permission to use this command."),
-                        "member" => (await bot.GetGroupMemberInfo(Message.GroupUin, Message.MemberUin)).Role > RoleType.Member ? await OnCommandMemberInfo(bot, Message) : Text("No permission to use this command."),
-                        "mute" => await GetPermAsync(bot, Message.GroupUin, Message.MemberUin) > RoleType.Member && await GetBotPermAsync(bot, Message.GroupUin) > RoleType.Member ? await OnCommandMuteMember(bot, Message) : Text("No permission to use this command."),
-                        "title" => await GetPermAsync(bot, Message.GroupUin, Message.MemberUin) > RoleType.Member && await GetBotPermAsync(bot, Message.GroupUin) > RoleType.Member ? await OnCommandSetTitle(bot, Message) : Text("No permission to use this command."),
-                        _ => Text("Unknown command")
-                    }))
-                    {
-                        Console.WriteLine("发送失败! ");
-                    }
-                }
-                break;
-            case FriendMessageEvent Message:
-                if (Message.Chain.First() is TextChain FriendChain)
-                {
-                    var Command = new Commands<string>(FriendChain.Content.Trim());
-                    if (!await bot.SendFriendMessage(Message.FriendUin, Command[0][1..].ToLower() switch
-                    {
-                        "help" => OnCommandHelp(FriendChain),
-                        "ping" => OnCommandPing(FriendChain),
-                        "status" => OnCommandStatus(FriendChain),
-                        "echo" => OnCommandEcho(FriendChain, Message.Chain),
-                        "searchimage" => await OnCommandSearchImage(Message.Chain),
-                        "搜图" => await OnCommandSearchImage(Message.Chain),
-                        "addbot" => Message.FriendUin == Program.Config.Owner ? await OnCommandAddBot(Command[1], Command[2]) : Text("No permission to use this command."),
-                        "captcha" => Message.FriendUin == Program.Config.Owner ? OnCommandCaptcha(Command[1], Command[2], Command[3]) : Text("No permission to use this command."),
-                        "startcaptcha" => Message.FriendUin == Program.Config.Owner ? await OnCommandStartCaptchaAsync(Command[1], Command[2]) : Text("No permission to use this command."),
-                        "enablebot" => Message.FriendUin == Program.Config.Owner ? OnCommandEnableBot(Command[1]) : Text("No permission to use this command."),
-                        "disablebot" => Message.FriendUin == Program.Config.Owner ? OnCommandDisableBot(Command[1]) : Text("No permission to use this command."),
-                        _ => Text("Unknown command")
-                    }))
-                    {
-                        Console.WriteLine("发送失败! ");
-                    }
-                }
-                break;
-            default:
-                break;
-        }
-    }
-
 
     public static MessageBuilder OnCommandEnableBot(string bot)
     {
@@ -324,42 +373,38 @@ public static class Command
         public Header header { get; set; }
         public List<Results> results { get; set; }
     }
-    public static async Task<MessageBuilder> OnCommandSearchImage(MessageChain chain) {
-        if (chain.FindChain<ImageChain>().Any())
+    public static async Task<MessageBuilder> OnCommandSearchImage(ImageChain chain) {
+        Uri ImageUrl = chain.ImageUrl[..4] != "http" ? new("https://gchat.qpic.cn" + chain.ImageUrl) : new(chain.ImageUrl);
+        try
         {
-            Uri ImageUrl = new(chain.FindChain<ImageChain>().First().ImageUrl);
-            if(ImageUrl.Scheme.Length<1) ImageUrl = new("https://gchat.qpic.cn" + chain.FindChain<ImageChain>().First().ImageUrl);
-            try
+            if (lockSearchImage)
             {
-                var T = new MessageBuilder();
-                if (lockSearchImage)
+                ImageSearchResult? r = JsonConvert.DeserializeObject<ImageSearchResult>(await Http.GetAsync(new Uri("https://saucenao.com/search.php?db=999&output_type=2&numres=3&api_key=&url=" + ImageUrl.AbsoluteUri)).Result.Content.ReadAsStringAsync());
+                if (r != null)
                 {
-                    ImageSearchResult? r = JsonConvert.DeserializeObject<ImageSearchResult>(await Http.GetAsync(new Uri("https://saucenao.com/search.php?db=999&output_type=2&numres=3&api_key=APIKEY&url=" + ImageUrl.AbsoluteUri)).Result.Content.ReadAsStringAsync());
-                    if (r != null)
+                    var T = new MessageBuilder();
+                    if (r.header.status == 0)
                     {
-                        if (r.header.long_remaining < 20) lockSearchImage = false;
-                        if (r.header.status == 0)
+                        foreach (var item in r.results.OrderByDescending(x => x.header.similarity))
                         {
-                            foreach (var item in r.results.OrderByDescending(x => x.header.similarity))
-                            {
-                                T.Image(await Http.GetAsync(new(item.header.thumbnail)).Result.Content.ReadAsByteArrayAsync());
-                                T.Text($"\n相似度:{item.header.similarity}%");
-                                T.Text($"\n地址:{(item.data.ext_urls != null ? item.data.ext_urls[0]:"没有数据!")}\n\n");
-                            }
-                            return T;
+                            T.Image(await Http.GetAsync(new(item.header.thumbnail)).Result.Content.ReadAsByteArrayAsync());
+                            T.Text($"\n相似度:{item.header.similarity}%");
+                            T.Text($"\n地址:{(item.data.ext_urls != null ? item.data.ext_urls[0] : "没有数据!")}\n\n");
                         }
+                        
                     }
-
+                    if (r.header.long_remaining <= 20)
+                    {
+                        lockSearchImage = false;
+                        T.Text("识图次数以达到上限, 请等待24小时后限制解除");
+                    }
+                    return T;
                 }
             }
-            catch (Exception e)
-            {
-                Console.WriteLine(e);
-            }
         }
-        else
+        catch (Exception e)
         {
-            return Text("请提供图片!");
+            Console.WriteLine(e);
         }
         return Text("没有找到有效的结果");
     }

@@ -1,10 +1,10 @@
 ﻿using System.Collections;
 using System.Linq;
 using System.Net.Http.Headers;
+using System.Reflection;
 
 namespace Nanako.Utils
 {
-
     class Commands<String> : IEnumerable<string>
     {
         private List<string> CommandList { get; set; }
@@ -100,8 +100,57 @@ namespace Nanako.Utils
             return await Constructor(head, timeout).SendAsync(Request);
         }
     }
-    internal static class Utils
+    internal static class Util
     {
+        /// <summary>
+        /// Get arguments of a code string
+        /// </summary>
+        /// <param name="code"></param>
+        /// <returns></returns>
+        public static Dictionary<string, string> GetArgs(string code)
+        {
+            var kvpair = new Dictionary<string, string>();
+
+            // Split with a comma
+            // [KQ:x,x=1,y=2] will becomes
+            // "KQ:x" "x=1" "y=2"
+            var split = code[..^1].Split(',');
+            {
+                // Split every kvpair with an equal
+                // "KQ:x" ignored
+                // "x=1" will becomes "x" "1"
+                for (var i = 1; i < split.Length; ++i)
+                {
+                    var eqpair = split[i].Split('=');
+                    if (eqpair.Length < 2) continue;
+                    {
+                        kvpair.Add(eqpair[0],
+                            string.Join("=", eqpair[1..]));
+                    }
+                }
+
+                return kvpair;
+            }
+        }
+        public static long Epoch(this DateTime time)
+        => (time.Ticks - 621355968000000000) / 10000;
+        /// <summary>
+        /// 利用反射来判断对象是否包含某个属性
+        /// </summary>
+        /// <param name="instance">object</param>
+        /// <param name="propertyName">需要判断的属性</param>
+        /// <returns>是否包含</returns>
+        public static bool ContainProperty(this object instance, string propertyName)
+        {
+            if (instance != null && !string.IsNullOrEmpty(propertyName))
+            {
+                PropertyInfo _findedPropertyInfo = instance.GetType().GetProperty(propertyName);
+                return (_findedPropertyInfo != null);
+            }
+            return false;
+        }
+
+
         public static double Bytes2MiB(this long bytes, int round) => Math.Round(bytes / 1048576.0, round);
     }
 }

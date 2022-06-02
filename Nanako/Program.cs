@@ -8,6 +8,7 @@ using Konata.Core.Message;
 using Nanako.Module;
 using Nanako.Utils;
 using Sentry;
+using System.Collections;
 
 namespace Nanako;
 
@@ -44,6 +45,7 @@ public static class Program
 {
     public static Config Config = GetConfig();
     public static List<Bot> BotList = new();
+    public static Hashtable ChainTable = Hashtable.Synchronized(new Hashtable());
     public static uint messageCounter = 0;
     public static List<(Bot bot, CaptchaEvent eventSource)> NeedCaptchaBotList = new();
 
@@ -65,12 +67,12 @@ public static class Program
             if (!Directory.Exists("Account")) Directory.CreateDirectory("Account");
             if (!Directory.Exists("Data")) Directory.CreateDirectory("Data");
             if (!Directory.Exists("Cache")) Directory.CreateDirectory("Cache");
+            if (!Directory.Exists("Cache/Image")) Directory.CreateDirectory("Cache/Image");
             configData = DeserializeFile<Config>("config.json");
             if (configData.ConfigList != null && configData.ConfigList.Count > 0)
             {
                 foreach (var bot in configData.ConfigList)
                 {
-                    if (!Directory.Exists($"Cache/{bot.BotId}")) Directory.CreateDirectory($"Cache/{bot.BotId}");
                     BotKeyStore? KeyStore;
                     if ((KeyStore = DeserializeFile<BotKeyStore>($"Account/{bot.BotId}.json")) != null)
                     {
