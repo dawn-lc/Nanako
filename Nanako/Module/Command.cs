@@ -50,6 +50,10 @@ public static class Command
         {
             OnCommand(bot, eventSource);
         }
+        if (eventSource.Chain.Any(p => p is ReplyChain reply))
+        {
+            OnCommand(bot, eventSource);
+        }
         ++Program.messageCounter;
     }
 

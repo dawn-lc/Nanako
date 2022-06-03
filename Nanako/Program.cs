@@ -1,4 +1,6 @@
-﻿using Newtonsoft.Json;
+﻿using System.Collections;
+using Sentry;
+using Spectre.Console;
 using Konata.Core;
 using Konata.Core.Common;
 using Konata.Core.Events.Model;
@@ -7,8 +9,8 @@ using Konata.Core.Interfaces.Api;
 using Konata.Core.Message;
 using Nanako.Module;
 using Nanako.Utils;
-using Sentry;
-using System.Collections;
+using System.Text.Json.Serialization;
+using System.Text.Json;
 
 namespace Nanako;
 
@@ -18,13 +20,11 @@ public class Config
     {
         public uint BotId { get; set; }
         public bool Enable { get; set; }
-        [JsonIgnore]
-        public Konata.Core.Common.BotConfig? Config { get; set; }
+        public Konata.Core.Common.BotConfig? Config = GlobalConfig;
         [JsonIgnore]
         public BotDevice? Device { get; set; }
         [JsonIgnore]
         public BotKeyStore? KeyStore { get; set; }
-
     }
     public static Konata.Core.Common.BotConfig GlobalConfig = new()
     {
@@ -34,99 +34,26 @@ public class Config
     };
     public List<BotConfig> ConfigList { get; set; }
     public uint Owner { get; set; }
+    public bool Initialize { get; set; }
     public Config()
     {
-
+        ConfigList = new();
+        Initialize = false;
     }
-
 }
 
 public static class Program
 {
-    public static Config Config = GetConfig();
+    public static Config Config;
     public static List<Bot> BotList = new();
     public static Hashtable ChainTable = Hashtable.Synchronized(new Hashtable());
     public static uint messageCounter = 0;
     public static List<(Bot bot, CaptchaEvent eventSource)> NeedCaptchaBotList = new();
 
-    private static T DeserializeFile<T>(string path) where T : new()
+    private static async Task<T> DeserializeFile<T>(string path) where T : new()
     {
         T? data;
-        return File.Exists(path) ? (data = JsonConvert.DeserializeObject<T>(File.ReadAllText(path))) != null ? data : new T() : new T();
-    }
-
-    /// <summary>
-    /// Get bot config
-    /// </summary>
-    /// <returns></returns>
-    private static Config GetConfig()
-    {
-        Config? configData = null;
-        try
-        {
-            if (!Directory.Exists("Account")) Directory.CreateDirectory("Account");
-            if (!Directory.Exists("Data")) Directory.CreateDirectory("Data");
-            if (!Directory.Exists("Cache")) Directory.CreateDirectory("Cache");
-            if (!Directory.Exists("Cache/Image")) Directory.CreateDirectory("Cache/Image");
-            configData = DeserializeFile<Config>("config.json");
-            if (configData.ConfigList != null && configData.ConfigList.Count > 0)
-            {
-                foreach (var bot in configData.ConfigList)
-                {
-                    BotKeyStore? KeyStore;
-                    if ((KeyStore = DeserializeFile<BotKeyStore>($"Account/{bot.BotId}.json")) != null)
-                    {
-                        bot.KeyStore = KeyStore;
-                    }
-                    BotDevice? Device;
-                    if ((Device = DeserializeFile<BotDevice>($"Data/{bot.BotId}_device.json")) != null)
-                    {
-                        bot.Device = Device;
-                    }
-                    BotConfig? Config;
-                    if ((Config = DeserializeFile<BotConfig>($"Data/{bot.BotId}_config.json")) != null)
-                    {
-                        bot.Config = Config;
-                    }
-                }
-                return configData;
-            }
-            else
-            {
-                throw new Exception("Robot configuration list not found!");
-            }
-        }
-        catch (IOException ex)
-        {
-            SentrySdk.CaptureException(ex);
-            Console.WriteLine(ex);
-            Thread.Sleep(10000);
-            Environment.Exit(1);
-        }
-        catch (Exception ex)
-        {
-            configData = null;
-            Console.WriteLine(ex.Message);
-            Console.WriteLine("initializing...");
-        }
-        while (configData == null)
-        {
-            try
-            {
-                Console.Write("please type owner account:");
-                configData = new Config()
-                {
-                    Owner = Convert.ToUInt32(Console.ReadLine()),
-                    ConfigList = new List<Config.BotConfig>()
-                };
-            }
-            catch (Exception)
-            {
-                Console.WriteLine("initializing...");
-                configData = null;
-            }
-        }
-        return configData;
+        return File.Exists(path) ? (data = JsonSerializer.Deserialize<T>(await File.ReadAllTextAsync(path))) != null ? data : new T() : new T();
     }
 
 
@@ -145,8 +72,7 @@ public static class Program
                 await bot.Logout();
                 bot.Dispose();
                 BotList.Remove(bot);
-                SentrySdk.CaptureException(new Exception("Bot config failed."));
-                Console.WriteLine("Bot config failed.");
+                AnsiConsole.MarkupLine("Bot配置文件错误！请重新添加该Bot。");
             }
             else
             {
@@ -169,21 +95,18 @@ public static class Program
                     }
                     else
                     {
-                        Console.WriteLine("Login failed, please type your password.");
-                        Console.Write("Password: ");
-                        config.KeyStore = new BotKeyStore(bot.KeyStore.Account.Uin.ToString(), Console.ReadLine());
+                        AnsiConsole.MarkupLine("Bot 登录失败，请重新输入密码！");
+                        config.KeyStore = new BotKeyStore(bot.KeyStore.Account.Uin.ToString(), AnsiConsole.Prompt(new TextPrompt<string>("[green]密码[/]:").PromptStyle("red").Secret()));
                         BotList.Remove(bot);
                         BotList.Add(BotFather.Create(config.Config, config.Device, config.KeyStore));
                         await Autologin(BotList.Find(p => p.Uin == config.KeyStore.Account.Uin));
                     }
-                    UpdateKeyStore(bot);
                 }
             }
         }
         else
         {
-            SentrySdk.CaptureException(new Exception("Login failed, bot is null."));
-            Console.WriteLine("Login failed, bot is null.");
+            AnsiConsole.MarkupLine("Bot 登录失败，Bot不存在！");
         }
     }
 
@@ -192,28 +115,28 @@ public static class Program
     /// </summary>
     private static void UpdateKeyStore(Bot bot)
     {
-        File.WriteAllText($"Account/{bot.Uin}.json", JsonConvert.SerializeObject(bot.KeyStore, Formatting.Indented));
+        File.WriteAllText($"Account/{bot.Uin}.json", JsonSerializer.Serialize(bot.KeyStore));
     }
     /// <summary>
     /// Update Config 
     /// </summary>
-    private static void UpdateConfig()
+    private static void UpdateConfig(Config config)
     {
-        File.WriteAllText($"config.json", JsonConvert.SerializeObject(Config, Formatting.Indented));
+        File.WriteAllText($"config.json", JsonSerializer.Serialize(config));
     }
     /// <summary>
     /// Update Config 
     /// </summary>
     private static void UpdateConfig(uint bot, BotConfig botConfig)
     {
-        File.WriteAllText($"Data/{bot}_config.json", JsonConvert.SerializeObject(botConfig, Formatting.Indented));
+        File.WriteAllText($"Data/{bot}_config.json", JsonSerializer.Serialize(botConfig));
     }
     /// <summary>
     /// Update Device
     /// </summary>
     private static void UpdateDevice(uint bot, BotDevice botDevice)
     {
-        File.WriteAllText($"Data/{bot}_device.json", JsonConvert.SerializeObject(botDevice, Formatting.Indented));
+        File.WriteAllText($"Data/{bot}_device.json", JsonSerializer.Serialize(botDevice));
     }
     public static void EnableBot(Bot bot)
     {
@@ -222,7 +145,7 @@ public static class Program
         {
             botConfig.Enable = true;
         }
-        UpdateConfig();
+        UpdateConfig(Config);
         Autologin(bot);
     }
     public static void DisableBot(Bot bot)
@@ -232,12 +155,16 @@ public static class Program
         {
             botConfig.Enable = false;
         }
-        UpdateConfig();
+        UpdateConfig(Config);
         bot.Logout();
     }
     public static async Task<string> AddBotAsync(string account, string password)
     {
-        if (Config.ConfigList.FindAll(p => p.BotId.ToString() == account).Count == 0)
+        if (Config.ConfigList.Any(p => p.BotId.ToString() == account))
+        {
+            return $"Bot {account} already exists!";
+        }
+        else
         {
             Config.BotConfig botConfig = new()
             {
@@ -250,70 +177,46 @@ public static class Program
             UpdateConfig(botConfig.KeyStore.Account.Uin, botConfig.Config);
             UpdateDevice(botConfig.KeyStore.Account.Uin, botConfig.Device);
             Config.ConfigList.Add(botConfig);
+            UpdateConfig(Config);
             BotList.Add(BotFather.Create(botConfig.Config, botConfig.Device, botConfig.KeyStore));
             await Autologin(BotList.Find(p => p.Uin.ToString() == account));
-            UpdateConfig();
             return "Add bot complete.";
         }
-        else
-        {
-            return "Bot " + account + " already exists!";
-        }
     }
-    private static void Initialization()
+    private static async Task<Config> Initialization(StatusContext ctx)
     {
-        if (new DirectoryInfo("Account").GetFiles().Any())
+        ctx.Status("检查工作目录...");
+        if (!Directory.Exists("Account")) Directory.CreateDirectory("Account");
+        if (!Directory.Exists("Data")) Directory.CreateDirectory("Data");
+        if (!Directory.Exists("Cache")) Directory.CreateDirectory("Cache");
+        if (!Directory.Exists("Cache/Image")) Directory.CreateDirectory("Cache/Image");
+        ctx.Status("加载配置文件...");
+        Config configData = await DeserializeFile<Config>("config.json");
+        try
         {
-            if (Config.ConfigList==null) Config.ConfigList = new();
-            foreach (var item in new DirectoryInfo("Account").GetFiles())
+            foreach (var bot in configData.ConfigList)
             {
-                Config.BotConfig bot = new()
-                {
-                    Enable = true
-                };
-                BotKeyStore? BotKeyStore;
-                if ((BotKeyStore = DeserializeFile<BotKeyStore>(item.FullName)) != null)
-                {
-                    bot.BotId = BotKeyStore.Account.Uin;
-                    bot.KeyStore = BotKeyStore;
-                }
-                BotDevice? BotDevice;
-                if ((BotDevice = DeserializeFile<BotDevice>($"Data/{bot.BotId}_device.json")) != null)
-                {
-                    bot.Device = BotDevice;
-                }
-                BotConfig? BotConfig;
-                if ((BotConfig = DeserializeFile<BotConfig>($"Data/{bot.BotId}_config.json")) != null)
-                {
-                    bot.Config = BotConfig;
-                }
-                Config.ConfigList.Add(bot);
+                ctx.Status($"加载 Bot {bot.BotId} 配置文件...");
+                bot.KeyStore = await DeserializeFile<BotKeyStore>($"Account/{bot.BotId}.json");
+                bot.Device = await DeserializeFile<BotDevice>($"Data/{bot.BotId}_device.json");
+                bot.Config = await DeserializeFile<BotConfig>($"Data/{bot.BotId}_config.json");
             }
-            UpdateConfig();
-            return;
         }
-        Console.WriteLine("For bot first login, please " +
-                          "type your account and password.");
-        Console.Write("Account: ");
-        var account = Console.ReadLine();
-        Console.Write("Password: ");
-        var password = Console.ReadLine();
-        Config.BotConfig botConfig = new()
+        catch (IOException ex)
         {
-            Enable = true,
-            BotId = Convert.ToUInt32(account),
-            Config = Config.GlobalConfig,
-            Device = BotDevice.Default(),
-            KeyStore = new BotKeyStore(account, password)
-        };
-        Config.ConfigList.Add(botConfig);
-        UpdateConfig(botConfig.KeyStore.Account.Uin, botConfig.Config);
-        UpdateDevice(botConfig.KeyStore.Account.Uin, botConfig.Device);
-        UpdateConfig();
-        BotList.Add(BotFather.Create(botConfig.Config, botConfig.Device, botConfig.KeyStore));
-        
+            AnsiConsole.MarkupLine(ex.ToString());
+            Thread.Sleep(10000);
+            Environment.Exit(1);
+        }
+        catch (Exception ex)
+        {
+            AnsiConsole.MarkupLine(ex.ToString());
+            Thread.Sleep(10000);
+            Environment.Exit(1);
+        }
+        return configData;
     }
-    public static void Main(string[] args)
+    static async Task Main(string[] args)
     {
         using (SentrySdk.Init(o =>
         {
@@ -321,14 +224,42 @@ public static class Program
             o.TracesSampleRate = 1.0;
         }))
         {
-            if (Config.ConfigList.Count < 1) Initialization();
+            await AnsiConsole.Status().StartAsync("初始化...", async ctx =>
+            {
+                Config = await Initialization(ctx);
+            });
+            if (!Config.Initialize || !Config.ConfigList.Any())
+            {
+                AnsiConsole.MarkupLine("首次启动, 请输入所有者账号！");
+                Config = new Config()
+                {
+                    Owner = AnsiConsole.Ask<uint>("[green]账号[/]:"),
+                    ConfigList = new()
+                };
+                AnsiConsole.MarkupLine("启动框架需要添加首个Bot, 请输入机器人账号以及密码！");
+                var account = AnsiConsole.Ask<uint>("[green]账号[/]:");
+                var password = AnsiConsole.Prompt(new TextPrompt<string>("[green]密码[/]:").PromptStyle("red").Secret());
+                Config.BotConfig botConfig = new()
+                {
+                    Enable = true,
+                    BotId = account,
+                    Config = Config.GlobalConfig,
+                    Device = BotDevice.Default(),
+                    KeyStore = new BotKeyStore(account.ToString(), password)
+                };
+                Config.ConfigList.Add(botConfig);
+                UpdateConfig(botConfig.KeyStore.Account.Uin, botConfig.Config);
+                UpdateDevice(botConfig.KeyStore.Account.Uin, botConfig.Device);
+                Config.Initialize = true;
+                UpdateConfig(Config);
+            }
             foreach (var bot in Config.ConfigList.Where(bot => bot.Config != null && bot.Device != null && bot.KeyStore != null))
             {
                 BotList.Add(BotFather.Create(bot.Config, bot.Device, bot.KeyStore));
             }
             foreach (Bot bot in BotList)
             {
-                Autologin(bot);
+                await Autologin(bot);
             }
             while (true)
             {
@@ -340,10 +271,10 @@ public static class Program
                     {
                         case "stop":
                             BotStop();
-                            UpdateConfig();
+                            UpdateConfig(Config);
                             return;
                         default:
-                            Console.WriteLine("Unknown command");
+                            AnsiConsole.MarkupLine("未知命令!");
                             break;
                     }
                 }
