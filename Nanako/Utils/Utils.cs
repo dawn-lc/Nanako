@@ -10,9 +10,10 @@ namespace Nanako.Utils
         private List<string> CommandList { get; set; }
         public Commands(string data)
         {
+            if (data.Trim().Length < 0) return;
             CommandList = new List<string>();
             bool q = false;
-            foreach (var item in data.Split(' '))
+            foreach (var item in data.Trim().Split(' '))
             {
                 if (item[0]== '\"')
                 {
@@ -58,7 +59,9 @@ namespace Nanako.Utils
         static readonly TimeSpan DefaultTimeout = new(0,0,1,0);
         public static HttpClient Constructor(Dictionary<string, IEnumerable<string>>? head, TimeSpan? timeout)
         {
-            HttpClient Client = new();
+            HttpClientHandler clientHandler = new();
+            clientHandler.ServerCertificateCustomValidationCallback = (sender, cert, chain, sslPolicyErrors) => { return true; };
+            HttpClient Client = new(clientHandler);
             Client.DefaultRequestHeaders.Clear();
             Client.Timeout = timeout ?? DefaultTimeout;
             if (head != null)

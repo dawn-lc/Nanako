@@ -9,7 +9,7 @@ using Konata.Core.Events;
 using System.Diagnostics;
 using Konata.Core.Common;
 using PuppeteerSharp;
-using Newtonsoft.Json;
+using Spectre.Console;
 
 namespace Nanako.Module;
 
@@ -29,10 +29,11 @@ public static class Command
             switch (item)
             {
                 case TextChain Chain:
-                    Console.WriteLine("[{0}({1})]:<{2}({3})>{4}", bot.Name, bot.Uin, eventSource.GetType().Name, eventSource.FriendUin, Chain);
+                    AnsiConsole.WriteLine("[{0}({1})]:<{2}({3})>{4}", bot.Name, bot.Uin, eventSource.GetType().Name, eventSource.FriendUin, Chain);
                     break;
                 case ImageChain Chain:
-                    Console.WriteLine("[{0}({1})]:<{2}({3})>{4}[{5}]", bot.Name, bot.Uin, eventSource.GetType().Name, eventSource.FriendUin, Chain.FileHash, Chain.FileLength);
+                    AnsiConsole.WriteLine("[{0}({1})]:<{2}({3})>{4}[{5}]", bot.Name, bot.Uin, eventSource.GetType().Name, eventSource.FriendUin, Chain.FileHash, Chain.FileLength);
+                    /*
                     if (!File.Exists($"Cache/Image/{Chain.FileName}"))
                     {
                         Task.Run(() => {
@@ -41,6 +42,7 @@ public static class Command
                             Http.GetAsync(new(Chain.ImageUrl)).Result.Content.CopyToAsync(file);
                         });
                     }
+                    */
                     break;
                 default:
                     break;
@@ -54,7 +56,7 @@ public static class Command
         {
             OnCommand(bot, eventSource);
         }
-        ++Program.messageCounter;
+        ++Program.MessageCounter;
     }
 
 
@@ -72,10 +74,11 @@ public static class Command
             switch (item)
             {
                 case TextChain Chain:
-                    Console.WriteLine("[{0}({1})]:<{2}({3})>{4}", bot.Name, bot.Uin, eventSource.GroupName, eventSource.GroupUin, Chain);
+                    AnsiConsole.WriteLine("[{0}({1})]:<{2}({3})>{4}", bot.Name, bot.Uin, eventSource.GroupName, eventSource.GroupUin, Chain);
                     break;
                 case ImageChain Chain:
-                    Console.WriteLine("[{0}({1})]:<{2}({3})>{4}[{5}]", bot.Name, bot.Uin, eventSource.GroupName, eventSource.GroupUin, Chain.FileName, eventSource.Message.Sequence);
+                    AnsiConsole.WriteLine("[{0}({1})]:<{2}({3})>{4}[{5}]", bot.Name, bot.Uin, eventSource.GroupName, eventSource.GroupUin, Chain.FileName, eventSource.Message.Sequence);
+                    /*
                     if (!File.Exists($"Cache/Image/{Chain.FileName}"))
                     {
                         Task.Run(async () => {
@@ -84,6 +87,7 @@ public static class Command
                             await Http.GetAsync(new("https://gchat.qpic.cn" + Chain.ImageUrl)).Result.Content.CopyToAsync(file);
                         });
                     }
+                    */
                     break;
                 default:
                     break;
@@ -97,7 +101,7 @@ public static class Command
         {
             OnCommand(bot, eventSource);
         }
-        ++Program.messageCounter;
+        ++Program.MessageCounter;
     }
 
 
@@ -118,7 +122,7 @@ public static class Command
                             if (Message.Chain.GetChain<ReplyChain>() is ReplyChain reply && Program.ChainTable[Util.GetArgs(reply.ToString())["seq"]] is MessageStruct replySource && replySource != null && replySource.Chain.FindChain<ImageChain>().Any() && replySource.Chain.FindChain<ImageChain>().First() is ImageChain imageChain)
                             {
                                 bot.SendGroupMessage(Message.GroupUin, Text("开始搜索, 请稍后..."));
-                                bot.SendGroupMessage(Message.GroupUin, await OnCommandSearchImage(imageChain));
+                                bot.SendGroupMessage(Message.GroupUin, await ImageSearch.Search(imageChain));
                             }
                             else
                             {
@@ -139,8 +143,8 @@ public static class Command
                         "ping" => OnCommandPing(GroupChain),
                         "status" => OnCommandStatus(GroupChain),
                         "echo" => OnCommandEcho(GroupChain, Message.Chain),
-                        "searchimage" => await OnCommandSearchImage(Message.Chain.FindChain<ImageChain>().First()),
-                        "搜图" => await OnCommandSearchImage(Message.Chain.FindChain<ImageChain>().First()),
+                        "searchimage" => await ImageSearch.Search(Message.Chain.FindChain<ImageChain>().First()),
+                        "搜图" => await ImageSearch.Search(Message.Chain.FindChain<ImageChain>().First()),
                         "eval" => await GetPermAsync(bot, Message.GroupUin, Message.MemberUin) > RoleType.Member ? OnCommandEval(Message.Chain) : Text("No permission to use this command."),
                         "member" => (await bot.GetGroupMemberInfo(Message.GroupUin, Message.MemberUin)).Role > RoleType.Member ? await OnCommandMemberInfo(bot, Message) : Text("No permission to use this command."),
                         "mute" => await GetPermAsync(bot, Message.GroupUin, Message.MemberUin) > RoleType.Member && await GetBotPermAsync(bot, Message.GroupUin) > RoleType.Member ? await OnCommandMuteMember(bot, Message) : Text("No permission to use this command."),
@@ -165,7 +169,7 @@ public static class Command
                                 if (Program.ChainTable[Util.GetArgs(Message.Chain.FindChain<ReplyChain>().First().ToString())["seq"]] is MessageStruct reply && reply != null && reply.Chain.FindChain<ImageChain>().Any() && reply.Chain.FindChain<ImageChain>().First() is ImageChain imageChain)
                                 {
                                     bot.SendFriendMessage(Message.FriendUin, Text("开始搜索, 请稍后..."));
-                                    bot.SendFriendMessage(Message.FriendUin, await OnCommandSearchImage(imageChain));
+                                    bot.SendFriendMessage(Message.FriendUin, await ImageSearch.Search(imageChain));
                                 }
                                 else
                                 {
@@ -191,8 +195,8 @@ public static class Command
                         "ping" => OnCommandPing(FriendChain),
                         "status" => OnCommandStatus(FriendChain),
                         "echo" => OnCommandEcho(FriendChain, Message.Chain),
-                        "searchimage" => await OnCommandSearchImage(Message.Chain.FindChain<ImageChain>().First()),
-                        "搜图" => await OnCommandSearchImage(Message.Chain.FindChain<ImageChain>().First()),
+                        "searchimage" => await ImageSearch.Search(Message.Chain.FindChain<ImageChain>().First()),
+                        "搜图" => await ImageSearch.Search(Message.Chain.FindChain<ImageChain>().First()),
                         "addbot" => Message.FriendUin == Program.Config.Owner ? await OnCommandAddBot(Command[1], Command[2]) : Text("No permission to use this command."),
                         "captcha" => Message.FriendUin == Program.Config.Owner ? OnCommandCaptcha(Command[1], Command[2], Command[3]) : Text("No permission to use this command."),
                         "startcaptcha" => Message.FriendUin == Program.Config.Owner ? await OnCommandStartCaptchaAsync(Command[1], Command[2]) : Text("No permission to use this command."),
@@ -338,80 +342,7 @@ public static class Command
             .Text("/status   Show bot status\n")
             .Text("/echo   Send a message");
 
-    public static bool lockSearchImage = true;
-    public class ImageSearchResult
-    {
-       public class Header
-        {
-            public string user_id { get; set; }
-
-            public string account_type { get; set; }
-
-            public string short_limit { get; set; }
-
-            public string long_limit { get; set; }
-
-            public int long_remaining { get; set; }
-
-            public int short_remaining { get; set; }
-
-            public int status { get; set; }
-
-        }
-        public class Results
-        {
-            public class Header
-            {
-                public string similarity { get; set; }
-
-                public string thumbnail { get; set; }
-
-            }
-            public class Data
-            {
-                public List<string> ext_urls { get; set; }
-            }
-            public Header header { get; set; }
-            public Data data { get; set; }
-        }
-        public Header header { get; set; }
-        public List<Results> results { get; set; }
-    }
-    public static async Task<MessageBuilder> OnCommandSearchImage(ImageChain chain) {
-        Uri ImageUrl = chain.ImageUrl[..4] != "http" ? new("https://gchat.qpic.cn" + chain.ImageUrl) : new(chain.ImageUrl);
-        try
-        {
-            if (lockSearchImage)
-            {
-                ImageSearchResult? r = JsonConvert.DeserializeObject<ImageSearchResult>(await Http.GetAsync(new Uri("https://saucenao.com/search.php?db=999&output_type=2&numres=3&api_key=&url=" + ImageUrl.AbsoluteUri)).Result.Content.ReadAsStringAsync());
-                if (r != null)
-                {
-                    var T = new MessageBuilder();
-                    if (r.header.status == 0)
-                    {
-                        foreach (var item in r.results.OrderByDescending(x => x.header.similarity))
-                        {
-                            T.Image(await Http.GetAsync(new(item.header.thumbnail)).Result.Content.ReadAsByteArrayAsync());
-                            T.Text($"\n相似度:{item.header.similarity}%");
-                            T.Text($"\n地址:{(item.data.ext_urls != null ? item.data.ext_urls[0] : "没有数据!")}\n\n");
-                        }
-                        
-                    }
-                    if (r.header.long_remaining <= 20)
-                    {
-                        lockSearchImage = false;
-                        T.Text("识图次数以达到上限, 请等待24小时后限制解除");
-                    }
-                    return T;
-                }
-            }
-        }
-        catch (Exception e)
-        {
-            Console.WriteLine(e);
-        }
-        return Text("没有找到有效的结果");
-    }
+   
     /// <summary>
     /// On status
     /// </summary>
@@ -442,7 +373,7 @@ public static class Command
             .Text($"[version:{BuildStamp.Version}]\n")
             .Text($"[{BuildStamp.BuildTime}]\n\n")
             // System status
-            .Text($"Processed {Program.messageCounter} message(s)\n")
+            .Text($"Processed {Program.MessageCounter} message(s)\n")
             .Text($"GC Memory {GC.GetTotalAllocatedBytes().Bytes2MiB(2)} MiB " +
                   $"({Math.Round((double)GC.GetTotalAllocatedBytes() / GC.GetTotalMemory(false) * 100, 2)}%)\n")
             .Text($"Total Memory {Process.GetCurrentProcess().WorkingSet64.Bytes2MiB(2)} MiB\n\n")
