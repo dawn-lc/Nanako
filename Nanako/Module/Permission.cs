@@ -1,9 +1,8 @@
-﻿using System;
-
-namespace Nanako.Module
+﻿namespace Nanako.Module
 {
-    internal class Permission
+    public class Permission
     {
-
+        string Name { get; set; }
+        bool Flag { get; set; }
     }
 }

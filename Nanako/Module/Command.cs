@@ -69,12 +69,13 @@ public static class Command
     {
         if (Program.BotList.Find(p => p.Uin == eventSource.MemberUin) != null) return;
         if (Program.ChainTable[eventSource.Message.Sequence.ToString()] == null) Program.ChainTable.Add(eventSource.Message.Sequence.ToString(), eventSource.Message);
+
         foreach (var item in eventSource.Chain)
         {
             switch (item)
             {
                 case TextChain Chain:
-                    AnsiConsole.WriteLine("[{0}({1})]:<{2}({3})>{4}", bot.Name, bot.Uin, eventSource.GroupName, eventSource.GroupUin, Chain);
+                    AnsiConsole.WriteLine("[{0}({1})]:<{2}({3})>{4}", bot.Name, bot.Uin, eventSource.GroupName, eventSource.GroupUin, Chain.Content.Trim());
                     break;
                 case ImageChain Chain:
                     AnsiConsole.WriteLine("[{0}({1})]:<{2}({3})>{4}[{5}]", bot.Name, bot.Uin, eventSource.GroupName, eventSource.GroupUin, Chain.FileName, eventSource.Message.Sequence);
@@ -93,6 +94,11 @@ public static class Command
                     break;
             }
         }
+        foreach (var plugin in Program.Plugins)
+        {
+            plugin.Process(bot, eventSource);
+        }
+        /*
         if (eventSource.Chain.First() is TextChain text && text != null && text.Content != null && text.Content.Trim() != "" && text.Content.Trim()[0] == '/')
         {
             OnCommand(bot, eventSource);
@@ -101,20 +107,21 @@ public static class Command
         {
             OnCommand(bot, eventSource);
         }
+        */
         ++Program.MessageCounter;
     }
 
 
 
-    public static async void OnCommand(Bot bot, ProtocolEvent eventSource)
+    public static async void OnCommand(Bot bot, BaseEvent eventSource)
     {
         switch (eventSource)
         {
-            case GroupMessageEvent Message:  
+            case GroupMessageEvent Message:
                 if (Message.Chain.Any(p => p is ReplyChain reply) && Message.Chain.Any(p => p is AtChain at && at.AtUin == bot.Uin) && Message.Chain.Any(p => p is TextChain text && text.Content.Trim() != ""))
                 {
-                   var Command = Message.Chain.Where(p => p is TextChain text && text.Content.Trim() != "").First() as TextChain;
-                   switch (Command.Content.Trim())
+                    var Command = Message.Chain.Where(p => p is TextChain text && text.Content.Trim() != "").First() as TextChain;
+                    switch (Command.Content.Trim())
                     {
                         case "搜图":
                         case "searchimage":
@@ -122,7 +129,7 @@ public static class Command
                             if (Message.Chain.GetChain<ReplyChain>() is ReplyChain reply && Program.ChainTable[Util.GetArgs(reply.ToString())["seq"]] is MessageStruct replySource && replySource != null && replySource.Chain.FindChain<ImageChain>().Any() && replySource.Chain.FindChain<ImageChain>().First() is ImageChain imageChain)
                             {
                                 bot.SendGroupMessage(Message.GroupUin, Text("开始搜索, 请稍后..."));
-                                bot.SendGroupMessage(Message.GroupUin, await ImageSearch.Search(imageChain));
+                               // bot.SendGroupMessage(Message.GroupUin, await ImageSearch.Search(imageChain));
                             }
                             else
                             {
@@ -143,8 +150,6 @@ public static class Command
                         "ping" => OnCommandPing(GroupChain),
                         "status" => OnCommandStatus(GroupChain),
                         "echo" => OnCommandEcho(GroupChain, Message.Chain),
-                        "searchimage" => await ImageSearch.Search(Message.Chain.FindChain<ImageChain>().First()),
-                        "搜图" => await ImageSearch.Search(Message.Chain.FindChain<ImageChain>().First()),
                         "eval" => await GetPermAsync(bot, Message.GroupUin, Message.MemberUin) > RoleType.Member ? OnCommandEval(Message.Chain) : Text("No permission to use this command."),
                         "member" => (await bot.GetGroupMemberInfo(Message.GroupUin, Message.MemberUin)).Role > RoleType.Member ? await OnCommandMemberInfo(bot, Message) : Text("No permission to use this command."),
                         "mute" => await GetPermAsync(bot, Message.GroupUin, Message.MemberUin) > RoleType.Member && await GetBotPermAsync(bot, Message.GroupUin) > RoleType.Member ? await OnCommandMuteMember(bot, Message) : Text("No permission to use this command."),
@@ -169,7 +174,7 @@ public static class Command
                                 if (Program.ChainTable[Util.GetArgs(Message.Chain.FindChain<ReplyChain>().First().ToString())["seq"]] is MessageStruct reply && reply != null && reply.Chain.FindChain<ImageChain>().Any() && reply.Chain.FindChain<ImageChain>().First() is ImageChain imageChain)
                                 {
                                     bot.SendFriendMessage(Message.FriendUin, Text("开始搜索, 请稍后..."));
-                                    bot.SendFriendMessage(Message.FriendUin, await ImageSearch.Search(imageChain));
+                                    //bot.SendFriendMessage(Message.FriendUin, await ImageSearch.Search(imageChain));
                                 }
                                 else
                                 {
@@ -195,8 +200,6 @@ public static class Command
                         "ping" => OnCommandPing(FriendChain),
                         "status" => OnCommandStatus(FriendChain),
                         "echo" => OnCommandEcho(FriendChain, Message.Chain),
-                        "searchimage" => await ImageSearch.Search(Message.Chain.FindChain<ImageChain>().First()),
-                        "搜图" => await ImageSearch.Search(Message.Chain.FindChain<ImageChain>().First()),
                         "addbot" => Message.FriendUin == Program.Config.Owner ? await OnCommandAddBot(Command[1], Command[2]) : Text("No permission to use this command."),
                         "captcha" => Message.FriendUin == Program.Config.Owner ? OnCommandCaptcha(Command[1], Command[2], Command[3]) : Text("No permission to use this command."),
                         "startcaptcha" => Message.FriendUin == Program.Config.Owner ? await OnCommandStartCaptchaAsync(Command[1], Command[2]) : Text("No permission to use this command."),

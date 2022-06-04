@@ -54,7 +54,7 @@ namespace Nanako.Utils
             return GetEnumerator();
         }
     }
-    internal static class Http
+    public static class Http
     {
         static readonly TimeSpan DefaultTimeout = new(0,0,1,0);
         public static HttpClient Constructor(Dictionary<string, IEnumerable<string>>? head, TimeSpan? timeout)

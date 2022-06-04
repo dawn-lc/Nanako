@@ -8,9 +8,11 @@ using Konata.Core.Interfaces;
 using Konata.Core.Interfaces.Api;
 using Konata.Core.Message;
 using Nanako.Module;
-using Nanako.Utils;
 using System.Text.Json.Serialization;
 using System.Text.Json;
+using static Nanako.Module.Permission;
+using Konata.Core.Message.Model;
+using Nanako.Utils;
 
 namespace Nanako;
 
@@ -41,9 +43,11 @@ public static class Program
 {
     public static Config Config { get; set; } = new();
     public static List<Bot> BotList { get; set; } = new List<Bot>();
+    public static List<(Bot bot, CaptchaEvent eventSource)> NeedCaptchaBotList { get; set; } = new();
+    public static Dictionary<uint, List<Permission>> PermissionTable { get; set; } = new();
+    public static List<Plugin> Plugins { get; set; } = new();
     public static Hashtable ChainTable { get; set; } = Hashtable.Synchronized(new Hashtable());
     public static uint MessageCounter { get; set; } = 0;
-    public static List<(Bot bot, CaptchaEvent eventSource)> NeedCaptchaBotList { get; set; } = new();
 
     private static async Task<T> DeserializeFile<T>(string path) where T : new()
     {
@@ -51,9 +55,37 @@ public static class Program
         return File.Exists(path) ? (data = JsonSerializer.Deserialize<T>(await File.ReadAllTextAsync(path))) != null ? data : new T() : new T();
     }
 
+    /// <summary>
+    /// Update KeyStore
+    /// </summary>
+    private static void UpdateKeyStore(Bot bot)
+    {
+        File.WriteAllText($"Account/{bot.Uin}.json", JsonSerializer.Serialize(bot.KeyStore));
+    }
+    /// <summary>
+    /// Update Config 
+    /// </summary>
+    private static void UpdateConfig(Config config)
+    {
+        File.WriteAllText($"config.json", JsonSerializer.Serialize(config));
+    }
+    /// <summary>
+    /// Update Config 
+    /// </summary>
+    private static void UpdateConfig(uint bot, BotConfig botConfig)
+    {
+        File.WriteAllText($"Data/{bot}_config.json", JsonSerializer.Serialize(botConfig));
+    }
+    /// <summary>
+    /// Update Device
+    /// </summary>
+    private static void UpdateDevice(uint bot, BotDevice botDevice)
+    {
+        File.WriteAllText($"Data/{bot}_device.json", JsonSerializer.Serialize(botDevice));
+    }
 
     /// <summary>
-    /// Update keystore
+    /// Auto login
     /// </summary>
     /// <param name="bot"></param>
     /// <returns></returns>
@@ -87,6 +119,7 @@ public static class Program
                     if (await bot.Login())
                     {
                         config.KeyStore = bot.KeyStore;
+                        UpdateKeyStore(bot);
                     }
                     else
                     {
@@ -104,36 +137,7 @@ public static class Program
             AnsiConsole.MarkupLine("[aqua]Bot 登录失败，Bot不存在！[/]");
         }
     }
-
-    /// <summary>
-    /// Update KeyStore
-    /// </summary>
-    private static void UpdateKeyStore(Bot bot)
-    {
-        File.WriteAllText($"Account/{bot.Uin}.json", JsonSerializer.Serialize(bot.KeyStore));
-    }
-    /// <summary>
-    /// Update Config 
-    /// </summary>
-    private static void UpdateConfig(Config config)
-    {
-        File.WriteAllText($"config.json", JsonSerializer.Serialize(config));
-    }
-    /// <summary>
-    /// Update Config 
-    /// </summary>
-    private static void UpdateConfig(uint bot, BotConfig botConfig)
-    {
-        File.WriteAllText($"Data/{bot}_config.json", JsonSerializer.Serialize(botConfig));
-    }
-    /// <summary>
-    /// Update Device
-    /// </summary>
-    private static void UpdateDevice(uint bot, BotDevice botDevice)
-    {
-        File.WriteAllText($"Data/{bot}_device.json", JsonSerializer.Serialize(botDevice));
-    }
-    public static void EnableBot(Bot bot)
+    public static async void EnableBot(Bot bot)
     {
         Config.BotConfig? botConfig;
         if ((botConfig = Config.ConfigList.Find(p => p.BotId == bot.Uin)) != null)
@@ -141,7 +145,7 @@ public static class Program
             botConfig.Enable = true;
         }
         UpdateConfig(Config);
-        Autologin(bot);
+        await Autologin(bot);
     }
     public static void DisableBot(Bot bot)
     {
@@ -178,10 +182,11 @@ public static class Program
             return "Add bot complete.";
         }
     }
-    private static async Task<Config> Initialization(StatusContext ctx)
+    private static async Task Initialization(StatusContext ctx)
     {
         ctx.Status("检查工作目录...");
         if (!Directory.Exists("Account")) Directory.CreateDirectory("Account");
+        if (!Directory.Exists("Plugins")) Directory.CreateDirectory("Plugins");
         if (!Directory.Exists("Data")) Directory.CreateDirectory("Data");
         if (!Directory.Exists("Cache")) Directory.CreateDirectory("Cache");
         if (!Directory.Exists("Cache/Image")) Directory.CreateDirectory("Cache/Image");
@@ -197,11 +202,17 @@ public static class Program
                 bot.Config = await DeserializeFile<BotConfig>($"Data/{bot.BotId}_config.json");
             }
         }
-        catch (IOException ex)
+        catch (Exception ex)
         {
             AnsiConsole.WriteLine(ex.ToString());
             Thread.Sleep(10000);
             Environment.Exit(1);
+        }
+        Config = configData;
+        ctx.Status("加载权限表...");
+        try
+        {
+            PermissionTable = await DeserializeFile<Dictionary<uint, List<Permission>>>("Data/permissions.json");
         }
         catch (Exception ex)
         {
@@ -209,7 +220,8 @@ public static class Program
             Thread.Sleep(10000);
             Environment.Exit(1);
         }
-        return configData;
+        ctx.Status("加载插件...");
+        PluginFactory.LoadPlugins();
     }
     static async Task Main(string[] args)
     {
@@ -219,12 +231,12 @@ public static class Program
             o.TracesSampleRate = 1.0;
         }))
         {
-            await AnsiConsole.Status().StartAsync("初始化...", async ctx =>
-            {
-                Config = await Initialization(ctx);
-            });
+            await AnsiConsole.Status()
+                .StartAsync("初始化...", async ctx => {
+                    await Initialization(ctx);
+                });
             AnsiConsole.Cursor.Hide();
-            AnsiConsole.MarkupLine("[aqua]Tips：按回车键选择指令[/]");
+            AnsiConsole.MarkupLine("[aqua]Tips：按Tab键选择指令[/]");
             if (!Config.Initialize || !Config.ConfigList.Any())
             {
                 AnsiConsole.MarkupLine("[aqua]首次启动, 请输入所有者账号！[/]");
@@ -264,25 +276,24 @@ public static class Program
             while (true)
             {
                 AnsiConsole.Cursor.Hide();
-                if (Console.ReadKey().Key == ConsoleKey.Enter)
+                if (Console.ReadKey().Key == ConsoleKey.Tab)
                 {
-                    var fruit = AnsiConsole.Prompt(
+                    switch (AnsiConsole.Prompt(
                         new SelectionPrompt<string>()
-                            .Title("请选择执行的指令?")
-                            .PageSize(10)
+                            .Title("[lime]请选择执行的指令？[/]")
+                            .PageSize(8)
                             .MoreChoicesText("[grey](上下方向键选择/翻页)[/]")
-                            .AddChoices(new[] 
+                            .AddChoices(new[]
                             {
-                                "Stop", "Exit"
+                                "关闭框架", "退出菜单"
                             })
-                    );
-                    switch (fruit)
+                    ))
                     {
-                        case "Stop":
+                        case "关闭框架":
                             BotStop();
                             UpdateConfig(Config);
                             return;
-                        case "Exit":
+                        case "退出菜单":
                             break;
                         default:
                             AnsiConsole.MarkupLine("[red]未知命令![/]");
@@ -300,13 +311,25 @@ public static class Program
             bot.Dispose();
         }
     }
+    public static MessageStruct? GetHistoryMessage(ReplyChain replyChain)
+    {
+        return GetHistoryMessage(Util.GetArgs(replyChain.ToString())["seq"]);
+    }
+    public static MessageStruct? GetHistoryMessage(string Sequence)
+    {
+        return ChainTable[Sequence] as MessageStruct;
+    }
+    public static MessageStruct? GetHistoryMessage(uint Sequence)
+    {
+        return ChainTable[Sequence] as MessageStruct;
+    }
     public static void BotOnline(Bot bot, BotOnlineEvent eventSource)
     {
-        AnsiConsole.WriteLine($"[{bot.Name}({bot.Uin})]:<{eventSource.GetType().Name}>");
+        AnsiConsole.WriteLine($"[{bot.Name}({bot.Uin})]:<上线>");
     }
     public static void BotOffline(Bot bot, BotOfflineEvent eventSource)
     {
-        AnsiConsole.WriteLine($"[{bot.Name}({bot.Uin})]:<{eventSource.GetType().Name}>");
+        AnsiConsole.WriteLine($"[{bot.Name}({bot.Uin})]:<下线>");
     }
     public static async void BotCaptcha(Bot bot, CaptchaEvent eventSource)
     {
