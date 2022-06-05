@@ -420,16 +420,6 @@ public static class Program
                     break;
                 case ImageChain Chain:
                     AnsiConsole.WriteLine("[{0}({1})]:<{2}({3})>{4}[{5}]", bot.Name, bot.Uin, eventSource.GetType().Name, eventSource.FriendUin, Chain.FileHash, Chain.FileLength);
-                    /*
-                    if (!File.Exists($"Cache/Image/{Chain.FileName}"))
-                    {
-                        Task.Run(() => {
-                            using FileStream file = new($"Cache/Image/{Chain.FileName}", FileMode.OpenOrCreate, FileAccess.Write);
-                            file.SetLength(0);
-                            Http.GetAsync(new(Chain.ImageUrl)).Result.Content.CopyToAsync(file);
-                        });
-                    }
-                    */
                     break;
                 default:
                     break;
@@ -455,7 +445,6 @@ public static class Program
                     break;
                 case ImageChain Chain:
                     AnsiConsole.WriteLine("[{0}({1})]:<{2}({3})>{4}[{5}]", bot.Name, bot.Uin, eventSource.GroupName, eventSource.GroupUin, Chain.FileName, eventSource.Message.Sequence);
-
                     break;
                 default:
                     break;

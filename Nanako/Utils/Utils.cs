@@ -5,7 +5,7 @@ using System.Reflection;
 
 namespace Nanako.Utils
 {
-    class Commands<String> : IEnumerable<string>
+    public class Commands<String> : IEnumerable<string>
     {
         private List<string> CommandList { get; set; }
         public Commands(string data)
@@ -152,8 +152,6 @@ namespace Nanako.Utils
             }
             return false;
         }
-
-
         public static double Bytes2MiB(this long bytes, int round) => Math.Round(bytes / 1048576.0, round);
     }
 }

@@ -1,12 +1,8 @@
 ﻿using Konata.Core;
 using Konata.Core.Events;
-using Konata.Core.Events.Model;
-using Konata.Core.Interfaces.Api;
 using Konata.Core.Message;
 using Konata.Core.Message.Model;
-using Nanako.Module;
-using Nanako.Utils;
-using System.Text.Json;
+using Spectre.Console;
 using System.Reflection;
 
 namespace Nanako.Module
@@ -22,6 +18,15 @@ namespace Nanako.Module
         public static MessageStruct? GetHistoryMessage(ReplyChain replyChain)
         {
             return Program.GetHistoryMessage(replyChain);
+        }
+        public static List<Bot> GetBotList(Predicate<Bot>? match = null)
+        {
+            if(match == null) return Program.BotList;
+            return Program.BotList.FindAll(match);
+        }
+        public static uint GetMessageCounter()
+        {
+            return Program.MessageCounter;
         }
         public static Bot? GetBot(Predicate<Bot> match)
         {
@@ -63,6 +68,7 @@ namespace Nanako.Module
                     if (t.IsSubclassOf(typeof(Plugin)) && !t.IsAbstract && Activator.CreateInstance(t) is Plugin plugin)
                     {
                         Program.Plugins.Add(plugin);
+                        AnsiConsole.WriteLine($"插件 {plugin.Name} 已加载");
                     }
                 }
             }
