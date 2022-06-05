@@ -14,7 +14,7 @@ namespace BasicCommand
     {
         public override string Name => "BasicCommand";
 
-        public override string Info => "Basic Commands";
+        public override string Info => "基本指令";
 
         public override async Task<bool> Process(Bot bot, BaseEvent eventSource)
         {
@@ -54,8 +54,8 @@ namespace BasicCommand
                             "帮助" => OnCommandHelp(),
                             "ping" => OnCommandPing(),
                             "状态" => OnCommandStatus(),
-                            "启用Bot" => await EnableBot(Convert.ToUInt32(Command[1]), Message.FriendUin) ? Text("已启用") : Text("指令执行失败, 没有足够的权限执行该命令..."),
-                            "禁用Bot" => await EnableBot(Convert.ToUInt32(Command[1]), Message.FriendUin) ? Text("已禁用") : Text("指令执行失败, 没有足够的权限执行该命令..."),
+                            "启用bot" => await EnableBot(Convert.ToUInt32(Command[1]), Message.FriendUin) ? Text("已启用") : Text("指令执行失败, 没有足够的权限执行该命令..."),
+                            "禁用bot" => await DisableBot(Convert.ToUInt32(Command[1]), Message.FriendUin) ? Text("已禁用") : Text("指令执行失败, 没有足够的权限执行该命令..."),
                             _ => Text("未知命令")
                         });
                     }
@@ -96,12 +96,10 @@ namespace BasicCommand
         /// <returns></returns>
         public static MessageBuilder OnCommandHelp()
             => new MessageBuilder()
-                .Text("[Help]\n")
-                .Text("/help   Print this bot help\n")
-                .Text("/ping   Pong!\n")
-                .Text("/status   Show bot status\n")
-                .Text("/echo   Send a message");
-
+                .Text("[基础指令]\n")
+                .Text("/帮助   来点帮助!\n")
+                .Text("/状态   让我康康你运行正不正常\n")
+                .Text("/ping   Pong!\n");
 
         /// <summary>
         /// On status

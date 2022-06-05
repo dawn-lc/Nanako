@@ -69,6 +69,13 @@ public static class Program
         File.WriteAllText($"config.json", JsonSerializer.Serialize(config));
     }
     /// <summary>
+    /// Update Permissions 
+    /// </summary>
+    private static void UpdatePermissions()
+    {
+        File.WriteAllText($"Data/permissions.json", JsonSerializer.Serialize(PermissionTable));
+    }
+    /// <summary>
     /// Update Config 
     /// </summary>
     private static void UpdateConfig(uint bot, BotConfig botConfig)
@@ -145,6 +152,7 @@ public static class Program
                     Owner = AnsiConsole.Ask<uint>("[green]账号[/]:"),
                     ConfigList = new()
                 };
+                PermissionTable.Add(Config.Owner, new() { new() { Flag = true, Name = "*" } });
                 AnsiConsole.MarkupLine("[aqua]启动框架需要添加首个Bot, 请输入机器人账号以及密码！[/]");
                 AnsiConsole.MarkupLine("[yellow]注意![/]该Bot请务必保证已添加所有者账号为好友，否则将无法收到登录验证信息。");
                 var account = AnsiConsole.Ask<uint>("[green]账号[/]:");
@@ -160,6 +168,7 @@ public static class Program
                 Config.ConfigList.Add(botConfig);
                 UpdateConfig(botConfig.KeyStore.Account.Uin, botConfig.Config);
                 UpdateDevice(botConfig.KeyStore.Account.Uin, botConfig.Device);
+                UpdatePermissions();
                 Config.Initialize = true;
                 UpdateConfig(Config);
             }
@@ -196,6 +205,7 @@ public static class Program
                             if(AnsiConsole.Confirm("确认退出?", false))
                             {
                                 BotStop();
+                                UpdatePermissions();
                                 UpdateConfig(Config);
                                 return;
                             }
