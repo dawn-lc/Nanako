@@ -10,9 +10,9 @@ using Konata.Core.Message;
 using Nanako.Module;
 using System.Text.Json.Serialization;
 using System.Text.Json;
-using static Nanako.Module.Permission;
 using Konata.Core.Message.Model;
 using Nanako.Utils;
+using PuppeteerSharp;
 
 namespace Nanako;
 
@@ -43,7 +43,6 @@ public static class Program
 {
     public static Config Config { get; set; } = new();
     public static List<Bot> BotList { get; set; } = new List<Bot>();
-    public static List<(Bot bot, CaptchaEvent eventSource)> NeedCaptchaBotList { get; set; } = new();
     public static Dictionary<uint, List<Permission>> PermissionTable { get; set; } = new();
     public static List<Plugin> Plugins { get; set; } = new();
     public static Hashtable ChainTable { get; set; } = Hashtable.Synchronized(new Hashtable());
@@ -82,105 +81,6 @@ public static class Program
     private static void UpdateDevice(uint bot, BotDevice botDevice)
     {
         File.WriteAllText($"Data/{bot}_device.json", JsonSerializer.Serialize(botDevice));
-    }
-
-    /// <summary>
-    /// Auto login
-    /// </summary>
-    /// <param name="bot"></param>
-    /// <returns></returns>
-    private static async Task Autologin(Bot? bot)
-    {
-        if (bot != null)
-        {
-            var config = Config.ConfigList.Find(p => p.BotId == bot.KeyStore.Account.Uin);
-            if (config == null)
-            {
-                await bot.Logout();
-                bot.Dispose();
-                BotList.Remove(bot);
-                AnsiConsole.MarkupLine("[aqua]Bot配置文件错误！请重新添加该Bot。[/]");
-            }
-            else
-            {
-                bot.OnCaptcha -= BotCaptcha;
-                bot.OnBotOnline -= BotOnline;
-                bot.OnBotOffline -= BotOffline;
-                bot.OnFriendMessage -= Command.OnFriendMessage;
-                bot.OnGroupMessage -= Command.OnGroupMessage;
-
-                if (config.Enable)
-                {
-                    bot.OnCaptcha += BotCaptcha;
-                    bot.OnBotOnline += BotOnline;
-                    bot.OnBotOffline += BotOffline;
-                    bot.OnFriendMessage += Command.OnFriendMessage;
-                    bot.OnGroupMessage += Command.OnGroupMessage;
-                    if (await bot.Login())
-                    {
-                        config.KeyStore = bot.KeyStore;
-                        UpdateKeyStore(bot);
-                    }
-                    else
-                    {
-                        AnsiConsole.MarkupLine("[aqua]Bot 登录失败，请重新输入密码！[/]");
-                        config.KeyStore = new BotKeyStore(bot.KeyStore.Account.Uin.ToString(), AnsiConsole.Prompt(new TextPrompt<string>("[green]密码[/]:").PromptStyle("red").Secret()));
-                        BotList.Remove(bot);
-                        BotList.Add(BotFather.Create(config.Config, config.Device, config.KeyStore));
-                        await Autologin(BotList.Find(p => p.Uin == config.KeyStore.Account.Uin));
-                    }
-                }
-            }
-        }
-        else
-        {
-            AnsiConsole.MarkupLine("[aqua]Bot 登录失败，Bot不存在！[/]");
-        }
-    }
-    public static async void EnableBot(Bot bot)
-    {
-        Config.BotConfig? botConfig;
-        if ((botConfig = Config.ConfigList.Find(p => p.BotId == bot.Uin)) != null)
-        {
-            botConfig.Enable = true;
-        }
-        UpdateConfig(Config);
-        await Autologin(bot);
-    }
-    public static void DisableBot(Bot bot)
-    {
-        Config.BotConfig? botConfig;
-        if ((botConfig = Config.ConfigList.Find(p => p.BotId == bot.Uin)) != null)
-        {
-            botConfig.Enable = false;
-        }
-        UpdateConfig(Config);
-        bot.Logout();
-    }
-    public static async Task<string> AddBotAsync(string account, string password)
-    {
-        if (Config.ConfigList.Any(p => p.BotId.ToString() == account))
-        {
-            return $"Bot {account} already exists!";
-        }
-        else
-        {
-            Config.BotConfig botConfig = new()
-            {
-                Enable = true,
-                BotId = Convert.ToUInt32(account),
-                Config = Config.GlobalConfig,
-                Device = BotDevice.Default(),
-                KeyStore = new BotKeyStore(account, password)
-            };
-            UpdateConfig(botConfig.KeyStore.Account.Uin, botConfig.Config);
-            UpdateDevice(botConfig.KeyStore.Account.Uin, botConfig.Device);
-            Config.ConfigList.Add(botConfig);
-            UpdateConfig(Config);
-            BotList.Add(BotFather.Create(botConfig.Config, botConfig.Device, botConfig.KeyStore));
-            await Autologin(BotList.Find(p => p.Uin.ToString() == account));
-            return "Add bot complete.";
-        }
     }
     private static async Task Initialization(StatusContext ctx)
     {
@@ -285,16 +185,24 @@ public static class Program
                             .MoreChoicesText("[grey](上下方向键选择/翻页)[/]")
                             .AddChoices(new[]
                             {
-                                "关闭框架", "退出菜单"
+                                 "添加Bot", "关闭菜单", "退出程序"
                             })
                     ))
                     {
-                        case "关闭框架":
-                            BotStop();
-                            UpdateConfig(Config);
-                            return;
-                        case "退出菜单":
+                        case "添加Bot":
+                            AnsiConsole.WriteLine(await AddBot() ? "添加成功": "添加失败");
                             break;
+                        case "退出程序":
+                            if(AnsiConsole.Confirm("确认退出?", false))
+                            {
+                                BotStop();
+                                UpdateConfig(Config);
+                                return;
+                            }
+                            break;
+                        case "关闭菜单":
+                            break;
+                        
                         default:
                             AnsiConsole.MarkupLine("[red]未知命令![/]");
                             break;
@@ -323,47 +231,241 @@ public static class Program
     {
         return ChainTable[Sequence] as MessageStruct;
     }
-    public static void BotOnline(Bot bot, BotOnlineEvent eventSource)
+    public static void OnBotOnline(Bot bot, BotOnlineEvent eventSource)
     {
         AnsiConsole.WriteLine($"[{bot.Name}({bot.Uin})]:<上线>");
     }
-    public static void BotOffline(Bot bot, BotOfflineEvent eventSource)
+    public static void OnBotOffline(Bot bot, BotOfflineEvent eventSource)
     {
         AnsiConsole.WriteLine($"[{bot.Name}({bot.Uin})]:<下线>");
     }
-    public static async void BotCaptcha(Bot bot, CaptchaEvent eventSource)
+    /// <summary>
+    /// Auto login
+    /// </summary>
+    /// <param name="bot"></param>
+    /// <returns></returns>
+    private static async Task Autologin(Bot? bot)
     {
-        Bot? MainBot = BotList.Find(p => p.IsOnline());
+        if (bot != null)
+        {
+            var config = Config.ConfigList.Find(p => p.BotId == bot.KeyStore.Account.Uin);
+            if (config == null)
+            {
+                await bot.Logout();
+                bot.Dispose();
+                BotList.Remove(bot);
+                AnsiConsole.MarkupLine("[aqua]Bot配置文件错误！请重新添加该Bot。[/]");
+            }
+            else
+            {
+                bot.OnCaptcha -= OnBotCaptcha;
+                bot.OnBotOnline -= OnBotOnline;
+                bot.OnBotOffline -= OnBotOffline;
+                bot.OnFriendMessage -= OnFriendMessage;
+                bot.OnGroupMessage -= OnGroupMessage;
+
+                if (config.Enable)
+                {
+                    bot.OnCaptcha += OnBotCaptcha;
+                    bot.OnBotOnline += OnBotOnline;
+                    bot.OnBotOffline += OnBotOffline;
+                    bot.OnFriendMessage += OnFriendMessage;
+                    bot.OnGroupMessage += OnGroupMessage;
+                    if (await bot.Login())
+                    {
+                        config.KeyStore = bot.KeyStore;
+                        UpdateKeyStore(bot);
+                    }
+                    else
+                    {
+                        AnsiConsole.MarkupLine("[aqua]Bot 登录失败，请重新输入密码！[/]");
+                        config.KeyStore = new BotKeyStore(bot.KeyStore.Account.Uin.ToString(), AnsiConsole.Prompt(new TextPrompt<string>("[green]密码[/]:").PromptStyle("red").Secret()));
+                        BotList.Remove(bot);
+                        BotList.Add(BotFather.Create(config.Config, config.Device, config.KeyStore));
+                        await Autologin(BotList.Find(p => p.Uin == config.KeyStore.Account.Uin));
+                    }
+                }
+            }
+        }
+        else
+        {
+            AnsiConsole.MarkupLine("[aqua]Bot 登录失败，Bot不存在！[/]");
+        }
+    }
+    public static async Task<bool> EnableBot(uint bot)
+    {
+        return await EnableBot(BotList.Find(p => p.Uin == bot));
+    }
+    public static async Task<bool> EnableBot(Bot? bot)
+    {
+        if (bot == null) return false;
+        Config.BotConfig? botConfig;
+        if ((botConfig = Config.ConfigList.Find(p => p.BotId == bot.Uin)) != null)
+        {
+            botConfig.Enable = true;
+        }
+        UpdateConfig(Config);
+        await Autologin(bot);
+        return true;
+    }
+    public static async Task<bool> DisableBot(uint bot)
+    {
+        return await DisableBot(BotList.Find(p => p.Uin == bot));
+    }
+    public static async Task<bool> DisableBot(Bot? bot)
+    {
+        if (bot == null) return false;
+        Config.BotConfig? botConfig;
+        if ((botConfig = Config.ConfigList.Find(p => p.BotId == bot.Uin)) != null)
+        {
+            botConfig.Enable = false;
+        }
+        UpdateConfig(Config);
+        await bot.Logout();
+        return true;
+    }
+    public static async Task<bool> AddBot()
+    {
+        var account = AnsiConsole.Ask<uint>("[green]账号[/]:");
+        if (Config.ConfigList.Any(p => p.BotId == account))
+        {
+            return false;
+        }
+        else
+        {
+            var password = AnsiConsole.Prompt(new TextPrompt<string>("[green]密码[/]:").PromptStyle("red").Secret());
+            Config.BotConfig botConfig = new()
+            {
+                Enable = true,
+                BotId = Convert.ToUInt32(account),
+                Config = Config.GlobalConfig,
+                Device = BotDevice.Default(),
+                KeyStore = new BotKeyStore(account.ToString(), password)
+            };
+            UpdateConfig(botConfig.KeyStore.Account.Uin, botConfig.Config);
+            UpdateDevice(botConfig.KeyStore.Account.Uin, botConfig.Device);
+            Config.ConfigList.Add(botConfig);
+            UpdateConfig(Config);
+            BotList.Add(BotFather.Create(botConfig.Config, botConfig.Device, botConfig.KeyStore));
+            await Autologin(BotList.Find(p => p.Uin == account));
+            return true;
+        }
+    }
+    public static async void OnBotCaptcha(Bot bot, CaptchaEvent eventSource)
+    {
         switch (eventSource.Type)
         {
             case CaptchaEvent.CaptchaType.Sms:
-                NeedCaptchaBotList.Add((bot, eventSource));
-                await MainBot.SendFriendMessage(Config.Owner,
-                    new MessageBuilder()
-                    .Text($"[{bot.Uin}] 需要进行短信验证!\n")
-                    .Text($"绑定手机号为: {eventSource.Phone} 请检查是否收到验证码!\n")
-                    .Text($"收到验证码后请发送\" /captcha SMS {bot.Uin} 您收到的验证码 \"进行验证.")
-                );
+                AnsiConsole.WriteLine(bot.SubmitSmsCode(AnsiConsole.Ask<string>("[green]短信验证码[/]:")) ? "短信验证成功" : "短信验证失败");
                 break;
             case CaptchaEvent.CaptchaType.Slider:
-                NeedCaptchaBotList.Add((bot, eventSource));
-                await MainBot.SendFriendMessage(Config.Owner,
-                    new MessageBuilder()
-                    .Text($"[{bot.Uin}] 需要进行滑块验证!\n")
-                    .Text($"请选择验证方法:\n")
-                    .Text($"自动获取验证结果\" /startcaptcha Auto {bot.Uin} \"\n")
-                    .Text($"手动提交验证结果\" /startcaptcha Ticket {bot.Uin} \"\n")
-                );
+                AnsiConsole.WriteLine($"[{bot.Uin}] 需要进行滑块验证!");
+                await SliderCaptcha(bot, eventSource);
                 break;
             default:
             case CaptchaEvent.CaptchaType.Unknown:
-                await MainBot.SendFriendMessage(Config.Owner,
-                    new MessageBuilder()
-                    .Text($"[{bot.Uin}] 遇到了无法处理的验证模式!\n")
-                    .Text($"请请等待后续功能更新。\n")
-                );
+                AnsiConsole.WriteLine($"[{bot.Uin}] 遇到了无法处理的验证模式!");
+                AnsiConsole.WriteLine($"请请等待后续功能更新。");
                 break;
         }
+    }
+    private static async Task SliderCaptcha(Bot OnCaptchaBot, CaptchaEvent OnCaptchaBotCaptcha)
+    {
+        AnsiConsole.WriteLine("请在打开的窗口内进行验证");
+        try
+        {
+            await new BrowserFetcher().DownloadAsync(BrowserFetcher.DefaultChromiumRevision);
+        }
+        catch (Exception)
+        {
+            AnsiConsole.WriteLine("下载用于进行滑块验证的浏览器时出现问题, 请确认您是否能够访问https://storage.googleapis.com");
+            return;
+        }
+        var browser = await Puppeteer.LaunchAsync(new LaunchOptions()
+        {
+            Headless = false,
+            DefaultViewport = new ViewPortOptions(),
+            Args = new string[] { "--disable-features=site-per-process", "--window-size=300,550", OnCaptchaBotCaptcha.SliderUrl }
+        });
+        (await browser.PagesAsync())[0].Response += async (page, e) =>
+        {
+            if (e.Response.Url.Contains("cap_union_new_verify"))
+            {
+                var Response = await e.Response.JsonAsync();
+                if (Response.Value<int>("errorCode") == 0)
+                {
+                    if (OnCaptchaBot.SubmitSliderTicket(Response.Value<string>("ticket")))
+                    {
+                        AnsiConsole.WriteLine("验证成功");
+                    }
+                    else
+                    {
+                        AnsiConsole.WriteLine("验证失败");
+                    }
+                    await browser.CloseAsync();
+                }
+            }
+        };
+    }
+    internal static void OnFriendMessage(Bot bot, FriendMessageEvent eventSource)
+    {
+        if (BotList.Any(p => p.Uin == eventSource.FriendUin)) return;
+        if (ChainTable[eventSource.Message.Sequence.ToString()] == null) ChainTable.Add(eventSource.Message.Sequence.ToString(), eventSource.Message);
+        foreach (var item in eventSource.Chain)
+        {
+            switch (item)
+            {
+                case TextChain Chain:
+                    AnsiConsole.WriteLine("[{0}({1})]:<{2}({3})>{4}", bot.Name, bot.Uin, eventSource.GetType().Name, eventSource.FriendUin, Chain);
+                    break;
+                case ImageChain Chain:
+                    AnsiConsole.WriteLine("[{0}({1})]:<{2}({3})>{4}[{5}]", bot.Name, bot.Uin, eventSource.GetType().Name, eventSource.FriendUin, Chain.FileHash, Chain.FileLength);
+                    /*
+                    if (!File.Exists($"Cache/Image/{Chain.FileName}"))
+                    {
+                        Task.Run(() => {
+                            using FileStream file = new($"Cache/Image/{Chain.FileName}", FileMode.OpenOrCreate, FileAccess.Write);
+                            file.SetLength(0);
+                            Http.GetAsync(new(Chain.ImageUrl)).Result.Content.CopyToAsync(file);
+                        });
+                    }
+                    */
+                    break;
+                default:
+                    break;
+            }
+        }
+        foreach (var plugin in Plugins)
+        {
+            plugin.Process(bot, eventSource);
+        }
+        ++MessageCounter;
+    }
+    internal static void OnGroupMessage(Bot bot, GroupMessageEvent eventSource)
+    {
+        if (BotList.Find(p => p.Uin == eventSource.MemberUin) != null) return;
+        if (ChainTable[eventSource.Message.Sequence.ToString()] == null) ChainTable.Add(eventSource.Message.Sequence.ToString(), eventSource.Message);
+
+        foreach (var item in eventSource.Chain)
+        {
+            switch (item)
+            {
+                case TextChain Chain:
+                    AnsiConsole.WriteLine("[{0}({1})]:<{2}({3})>{4}", bot.Name, bot.Uin, eventSource.GroupName, eventSource.GroupUin, Chain.Content.Trim());
+                    break;
+                case ImageChain Chain:
+                    AnsiConsole.WriteLine("[{0}({1})]:<{2}({3})>{4}[{5}]", bot.Name, bot.Uin, eventSource.GroupName, eventSource.GroupUin, Chain.FileName, eventSource.Message.Sequence);
+
+                    break;
+                default:
+                    break;
+            }
+        }
+        foreach (var plugin in Plugins)
+        {
+            plugin.Process(bot, eventSource);
+        }
+        ++MessageCounter;
     }
 }
 
