@@ -9,8 +9,9 @@ namespace Nanako.Module
 {
     public abstract class Plugin
     {
-        public abstract string Name { get; }
+        public abstract string Name { get; } 
         public abstract string Info { get; }
+        public abstract List<Permission> PermissionList { get; }
         public virtual async Task<bool> Process(Bot bot, BaseEvent e)
         {
             return await Task.FromResult(true);
@@ -61,12 +62,17 @@ namespace Nanako.Module
         public static void LoadPlugins()
         {
             IEnumerable<FileInfo> files = new DirectoryInfo("Plugins").GetFiles().Where(p => p.Extension == ".dll");
+
             foreach (var file in files)
             {
-                foreach (Type t in Assembly.LoadFile(file.FullName).GetExportedTypes())
+                foreach (Type t in Assembly.LoadFrom(file.FullName).GetExportedTypes())
                 {
                     if (t.IsSubclassOf(typeof(Plugin)) && !t.IsAbstract && Activator.CreateInstance(t) is Plugin plugin)
                     {
+                        if (!Program.Config.PluginConfigTable.ContainsKey(plugin.Name))
+                        {
+                            Program.Config.PluginConfigTable.Add(plugin.Name, new());
+                        }
                         Program.Plugins.Add(plugin);
                         AnsiConsole.WriteLine($"插件 {plugin.Name} 已加载");
                     }

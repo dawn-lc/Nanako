@@ -16,10 +16,23 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Konata.Core" Version="1.3.1" />
+    <PackageReference Include="BinaryFormatter" Version="3.0.0" />
+    <PackageReference Include="Google.Protobuf" Version="3.21.1" />
+    <PackageReference Include="Grpc.Tools" Version="2.46.3">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Konata.Codec" Version="1.3.1" />
+    <PackageReference Include="NekoRush.FuturedSocket" Version="0.1.0" />
     <PackageReference Include="PuppeteerSharp" Version="7.0.0" />
     <PackageReference Include="Sentry" Version="3.17.1" />
     <PackageReference Include="Spectre.Console" Version="0.44.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="Konata.Core">
+      <HintPath>..\..\Konata.Core\Konata.Core\bin\Debug\net60\Konata.Core.dll</HintPath>
+    </Reference>
   </ItemGroup>
 
 </Project>

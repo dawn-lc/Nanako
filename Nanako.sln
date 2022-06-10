@@ -5,11 +5,6 @@ VisualStudioVersion = 17.1.32210.238
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Nanako", "Nanako\Nanako.csproj", "{3870B451-6267-4E42-8873-BA183B02D2C6}"
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{932670EC-85E2-40CF-A983-6479903286F4}"
-	ProjectSection(SolutionItems) = preProject
-		.editorconfig = .editorconfig
-	EndProjectSection
-EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BasicCommand", "BasicCommand\BasicCommand.csproj", "{89ACC70E-9650-47A6-8551-FA1EEEFED6AF}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ImageSearch", "ImageSearch\ImageSearch.csproj", "{94977E3A-F58D-4F3F-B142-E5B21A1F09C2}"

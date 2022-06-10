@@ -1,16 +1,32 @@
-﻿namespace Nanako.Module
+﻿
+using System.Reflection;
+using System.Xml.Serialization;
+
+namespace Nanako.Module
 {
-    public class Permission
+    public class PermissionItem
     {
-        public string Name { get; set; }
-        public bool Flag { get; set; }
+        public uint User { get; set; }
+        public List<Permission> Permissions { get; set; } = new(); 
+    }
+
+    public abstract class Permission
+    {
+        public abstract string Node { get; set; }
+        public abstract bool Flag { get; set; }
     }
 
     public static class Permissions
     {
-        public static bool Check(uint u, string permission)
+        public class Root : Permission
         {
-            return Program.PermissionTable.TryGetValue(u, out List<Permission>? permissions) && permissions.Any(p => (p.Name == permission || p.Name == "*" ) && p.Flag);
+            public override string Node { get; set; } = "*";
+            public override bool Flag { get; set; } = true;
+        }
+        public static Type[] All { get; } = Assembly.GetCallingAssembly().GetTypes().Where(t => t.BaseType != null && t.BaseType.Name == typeof(Permission).Name).ToArray();
+        public static bool Check(uint u, string node)
+        {
+            return Program.PermissionTable.TryGetValue(u, out List<Permission>? permissions) && permissions.Any(p => (p is Root || p.Node == node) && p.Flag);
         }
     }
 }

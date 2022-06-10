@@ -10,6 +10,13 @@ using System.Text.Json;
 
 namespace ImageSearch
 {
+
+    public class ImageSearch : Permission
+    {
+        public override string Node { get; set; } = "ImageSearch";
+        public override bool Flag { get; set; } = true;
+    }
+
     public class Main : Plugin
     {
         public override string Name => "ImageSearch";
@@ -19,6 +26,9 @@ namespace ImageSearch
         private static bool lockSearchImage = true;
         private static string Dir { get; set; } = $"{Env.Path}\\Data\\ImageSearch";
         private static string Key { get; set; } = Directory.Exists(Dir) && File.Exists($"{Dir}\\API.txt") ? File.ReadAllText($"{Dir}\\API.txt") : Initialization();
+
+        public override List<Permission> PermissionList => new() { new ImageSearch() };
+
         private class ImageSearchResult
         {
             public class Header
@@ -68,17 +78,17 @@ namespace ImageSearch
         private static async Task<MessageBuilder> ImageSearch(ImageChain chain)
         {
             var T = new MessageBuilder();
-            Uri ImageUrl = chain.ImageUrl[..4] != "http" ? new("https://gchat.qpic.cn" + chain.ImageUrl) : new(chain.ImageUrl);
+            Uri ImageUrl = new(chain.ImageUrl);
             if (lockSearchImage)
             {
-                ImageSearchResult? r = JsonSerializer.Deserialize<ImageSearchResult>(await Http.GetAsync(new Uri($"https://saucenao.com/search.php?db=999&output_type=2&numres=3&api_key={Key}&url={ImageUrl.AbsoluteUri}")).Result.Content.ReadAsStringAsync());
+                ImageSearchResult? r = JsonSerializer.Deserialize<ImageSearchResult>(await HTTP.GetAsync(new Uri($"https://saucenao.com/search.php?db=999&output_type=2&numres=3&api_key={Key}&url={ImageUrl.AbsoluteUri}")).Result.Content.ReadAsStringAsync());
                 if (r != null)
                 {
                     if (r.header.status == 0)
                     {
                         foreach (var item in r.results.OrderByDescending(x => x.header.similarity))
                         {
-                            T.Image(await Http.GetAsync(new(item.header.thumbnail)).Result.Content.ReadAsByteArrayAsync());
+                            T.Image(await HTTP.GetAsync(new(item.header.thumbnail)).Result.Content.ReadAsByteArrayAsync());
                             T.Text($"\n相似度:{item.header.similarity}%");
                             T.Text($"\n地址:{(item.data.ext_urls != null ? item.data.ext_urls[0] : "没有数据!")}\n\n");
                         }
@@ -108,29 +118,37 @@ namespace ImageSearch
                 switch (e)
                 {
                     case GroupMessageEvent messageEvent:
-                        if (messageEvent.Chain.Any(p => p is AtChain at && at.AtUin == bot.Uin))
+                        if(CheckPermission(messageEvent.MemberUin, "ImageSearch"))
                         {
-                            ReplyMessage = messageEvent.Chain.Any(p => p is ReplyChain) ? GetHistoryMessage(messageEvent.Chain.GetChain<ReplyChain>()) : null;
-                            if (ReplyMessage != null && messageEvent.Chain.Any(p => p is TextChain text && text.Content.Trim() != "" && text.Content.Trim().Contains("搜图")))
+                            if (messageEvent.Chain.Any(p => p is AtChain at && at.AtUin == bot.Uin))
                             {
-                                return await bot.SendGroupMessage(messageEvent.GroupUin, await ImageSearch(ReplyMessage.Chain.GetChain<ImageChain>()));
+                                ReplyMessage = messageEvent.Chain.Any(p => p is ReplyChain) ? GetHistoryMessage(messageEvent.Chain.GetChain<ReplyChain>()) : null;
+                                if (ReplyMessage != null && messageEvent.Chain.Any(p => p is TextChain text && text.Content.Trim() != "" && text.Content.Trim().Contains("搜图")))
+                                {
+                                    _ = bot.SendGroupMessage(messageEvent.GroupUin, await ImageSearch(ReplyMessage.Chain.GetChain<ImageChain>()));
+                                    return false;
+                                }
                             }
                         }
                         return true;
                     case FriendMessageEvent messageEvent:
-                        ReplyMessage = messageEvent.Chain.Any(p => p is ReplyChain) ? GetHistoryMessage(messageEvent.Chain.GetChain<ReplyChain>()) : null;
-                        if (ReplyMessage != null && messageEvent.Chain.Any(p => p is TextChain text && text.Content.Trim() != "" && text.Content.Trim().Contains("搜图")))
+                        if (CheckPermission(messageEvent.FriendUin, "ImageSearch"))
                         {
-                            return await bot.SendFriendMessage(messageEvent.FriendUin, await ImageSearch(ReplyMessage.Chain.GetChain<ImageChain>()));
+                            ReplyMessage = messageEvent.Chain.Any(p => p is ReplyChain) ? GetHistoryMessage(messageEvent.Chain.GetChain<ReplyChain>()) : null;
+                            if (ReplyMessage != null && messageEvent.Chain.Any(p => p is TextChain text && text.Content.Trim() != "" && text.Content.Trim().Contains("搜图")))
+                            {
+                                _ = await bot.SendFriendMessage(messageEvent.FriendUin, await ImageSearch(ReplyMessage.Chain.GetChain<ImageChain>()));
+                                return false;
+                            }
                         }
                         return true;
                     default:
-                        return false;
+                        return true;
                 }
             }
             catch (Exception)
             {
-                return false;
+                return true;
             }
         }
     }

@@ -1,10 +1,40 @@
-﻿using System.Collections;
-using System.Linq;
-using System.Net.Http.Headers;
+﻿using Nanako.Module;
+using System.Collections;
 using System.Reflection;
+using System.Xml.Serialization;
 
 namespace Nanako.Utils
 {
+    public class XML
+    {
+        /// <summary>  
+        /// 反序列化XML为类实例  
+        /// </summary>  
+        /// <typeparam name="T"></typeparam>  
+        /// <param name="xmlObj"></param>  
+        /// <returns></returns>  
+        public static T? Deserialize<T>(string xmlObj)
+        {
+            XmlSerializer serializer = new(typeof(T), Permissions.All);
+            using StringReader reader = new(xmlObj);
+            return (T?)serializer.Deserialize(reader);
+        }
+
+        /// <summary>  
+        /// 序列化类实例为XML  
+        /// </summary>  
+        /// <typeparam name="T"></typeparam>  
+        /// <param name="obj"></param>  
+        /// <returns></returns>  
+        public static string Serialize<T>(T obj)
+        {
+            using StringWriter writer = new();
+            new XmlSerializer(obj.GetType(), Permissions.All).Serialize(writer, obj);
+            return writer.ToString();
+        }
+    }
+
+
     public class Commands<String> : IEnumerable<string>
     {
         private List<string> CommandList { get; set; }
@@ -54,7 +84,7 @@ namespace Nanako.Utils
             return GetEnumerator();
         }
     }
-    public static class Http
+    public static class HTTP
     {
         static readonly TimeSpan DefaultTimeout = new(0,0,1,0);
         public static HttpClient Constructor(Dictionary<string, IEnumerable<string>>? head, TimeSpan? timeout)

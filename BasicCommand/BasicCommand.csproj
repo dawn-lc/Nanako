@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net6.0</TargetFramework>
@@ -8,6 +8,12 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Nanako\Nanako.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="Konata.Core">
+      <HintPath>..\..\Konata.Core\Konata.Core\bin\Debug\net60\Konata.Core.dll</HintPath>
+    </Reference>
   </ItemGroup>
 
   <Target Name="PostBuild" AfterTargets="PostBuildEvent">

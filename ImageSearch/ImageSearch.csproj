@@ -10,6 +10,12 @@
     <ProjectReference Include="..\Nanako\Nanako.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Reference Include="Konata.Core">
+      <HintPath>..\..\Konata.Core\Konata.Core\bin\Debug\net60\Konata.Core.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
   <Target Name="PostBuild" AfterTargets="PostBuildEvent">
     <Exec Command="COPY /y &quot;$(TargetPath)&quot; &quot;$(SolutionDir)Nanako\bin\Debug\net6.0\Plugins\$(TargetName).dll&quot;" />
   </Target>
