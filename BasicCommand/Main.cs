@@ -7,6 +7,7 @@ using Konata.Core.Message;
 using Konata.Core.Message.Model;
 using Nanako.Module;
 using Nanako.Utils;
+using System;
 
 namespace BasicCommand
 {
@@ -30,62 +31,70 @@ namespace BasicCommand
 
         public override async Task<bool> Process(Bot bot, BaseEvent eventSource)
         {
-
-            switch (eventSource)
+            try
             {
-                case GroupMessageEvent Message:
-                    if (Message.Chain.First() is TextChain GroupChain)
-                    {
-                        var Command = new Commands<string>(GroupChain.Content.ToLower());
-                        if (Command[0][..1] == "/") await bot.SendGroupMessage(Message.GroupUin, Command[0][1..].ToLower() switch
+                switch (eventSource)
+                {
+                    case GroupMessageEvent Message:
+                        if (Message.Chain.First() is TextChain GroupChain)
                         {
-                            "帮助" => OnCommandHelp(),
-                            "ping" => OnCommandPing(),
-                            "状态" => OnCommandStatus(),
-                            _ => Text("未知命令")
-                        });
-                    } else if (Message.Chain.Any(p => p is AtChain at && at.AtUin == bot.Uin))
-                    {
-                        if (!Message.Chain.Any(p => p is TextChain text && text.Content.Trim() != "")) break;
-                        var Command = Message.Chain.Where(p => p is TextChain text && text.Content.Trim() != "").First() as TextChain;
-                        await bot.SendGroupMessage(Message.GroupUin, Command.Content.Trim().ToLower() switch
+                            var Command = new Commands<string>(GroupChain.Content.ToLower());
+                            if (Command[0][..1] == "/") await bot.SendGroupMessage(Message.GroupUin, Command[0][1..].ToLower() switch
+                            {
+                                "帮助" => OnCommandHelp(),
+                                "ping" => OnCommandPing(),
+                                "状态" => OnCommandStatus(),
+                                _ => Text("未知命令")
+                            });
+                        }
+                        else if (Message.Chain.Any(p => p is AtChain at && at.AtUin == bot.Uin))
                         {
-                            "帮助" => OnCommandHelp(),
-                            "ping" => OnCommandPing(),
-                            "状态" => OnCommandStatus(),
-                            _ => Text("未知命令")
-                        });
-                    }
-                    break;
-                case FriendMessageEvent Message:
-                    if (Message.Chain.First() is TextChain FriendChain)
-                    {
-                        var Command = new Commands<string>(FriendChain.Content.Trim());
-                        if (Command[0][..1] == "/") await bot.SendFriendMessage(Message.FriendUin, Command[0][1..].ToLower() switch
+                            if (!Message.Chain.Any(p => p is TextChain text && text.Content.Trim() != "")) break;
+                            var Command = Message.Chain.Where(p => p is TextChain text && text.Content.Trim() != "").First() as TextChain;
+                            await bot.SendGroupMessage(Message.GroupUin, Command.Content.Trim().ToLower() switch
+                            {
+                                "帮助" => OnCommandHelp(),
+                                "ping" => OnCommandPing(),
+                                "状态" => OnCommandStatus(),
+                                _ => Text("未知命令")
+                            });
+                        }
+                        break;
+                    case FriendMessageEvent Message:
+                        if (Message.Chain.First() is TextChain FriendChain)
                         {
-                            "帮助" => OnCommandHelp(),
-                            "ping" => OnCommandPing(),
-                            "状态" => OnCommandStatus(),
-                            "启用bot" => await EnableBot(Convert.ToUInt32(Command[1]), Message.FriendUin) ? Text("已启用") : Text("指令执行失败, 没有足够的权限执行该命令..."),
-                            "禁用bot" => await DisableBot(Convert.ToUInt32(Command[1]), Message.FriendUin) ? Text("已禁用") : Text("指令执行失败, 没有足够的权限执行该命令..."),
-                            _ => Text("未知命令")
-                        });
-                    }
-                    else if (Message.Chain.Any(p => p is AtChain at && at.AtUin == bot.Uin))
-                    {
-                        if (!Message.Chain.Any(p => p is TextChain text && text.Content.Trim() != "")) break;
-                        var Command = Message.Chain.Where(p => p is TextChain text && text.Content.Trim() != "").First() as TextChain;
-                        await bot.SendFriendMessage(Message.FriendUin, Command.Content.Trim().ToLower() switch
+                            var Command = new Commands<string>(FriendChain.Content.Trim());
+                            if (Command[0][..1] == "/") await bot.SendFriendMessage(Message.FriendUin, Command[0][1..].ToLower() switch
+                            {
+                                "帮助" => OnCommandHelp(),
+                                "ping" => OnCommandPing(),
+                                "状态" => OnCommandStatus(),
+                                "启用bot" => await EnableBot(Convert.ToUInt32(Command[1]), Message.FriendUin) ? Text("已启用") : Text("指令执行失败, 没有足够的权限执行该命令..."),
+                                "禁用bot" => await DisableBot(Convert.ToUInt32(Command[1]), Message.FriendUin) ? Text("已禁用") : Text("指令执行失败, 没有足够的权限执行该命令..."),
+                                _ => Text("未知命令")
+                            });
+                        }
+                        else if (Message.Chain.Any(p => p is AtChain at && at.AtUin == bot.Uin))
                         {
-                            "帮助" => OnCommandHelp(),
-                            "ping" => OnCommandPing(),
-                            "状态" => OnCommandStatus(),
-                            _ => Text("未知命令")
-                        });
-                    }
-                    break;
-                default:
-                    break;
+                            if (!Message.Chain.Any(p => p is TextChain text && text.Content.Trim() != "")) break;
+                            var Command = Message.Chain.Where(p => p is TextChain text && text.Content.Trim() != "").First() as TextChain;
+                            await bot.SendFriendMessage(Message.FriendUin, Command.Content.Trim().ToLower() switch
+                            {
+                                "帮助" => OnCommandHelp(),
+                                "ping" => OnCommandPing(),
+                                "状态" => OnCommandStatus(),
+                                _ => Text("未知命令")
+                            });
+                        }
+                        break;
+                    default:
+                        break;
+                }
+            }
+            catch (Exception)
+            {
+
+                throw;
             }
             return true;
         }

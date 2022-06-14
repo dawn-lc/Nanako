@@ -16,8 +16,4 @@
     </Reference>
   </ItemGroup>
 
-  <Target Name="PostBuild" AfterTargets="PostBuildEvent">
-    <Exec Command="COPY /y &quot;$(TargetPath)&quot; &quot;$(SolutionDir)Nanako\bin\Debug\net6.0\Plugins\$(TargetName).dll&quot;" />
-  </Target>
-
 </Project>

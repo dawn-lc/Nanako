@@ -13,7 +13,6 @@ using System.Text.Json;
 using Konata.Core.Message.Model;
 using Nanako.Utils;
 using PuppeteerSharp;
-using System.Collections.Generic;
 
 namespace Nanako;
 
