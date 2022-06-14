@@ -7,9 +7,8 @@ using Konata.Core.Message;
 using Konata.Core.Message.Model;
 using Nanako.Module;
 using Nanako.Utils;
-using System;
 
-namespace BasicCommand
+namespace Command
 {
     public class EnableBot : Permission
     {
@@ -27,7 +26,7 @@ namespace BasicCommand
 
         public override string Info => "基本指令";
 
-        public override List<Permission> PermissionList => new() { new EnableBot(), new DisableBot()};
+        public override List<Permission> PermissionList => new() { new EnableBot(), new DisableBot() };
 
         public override async Task<bool> Process(Bot bot, BaseEvent eventSource)
         {
@@ -98,7 +97,7 @@ namespace BasicCommand
             }
             return true;
         }
-        
+
 
         /// <summary>
         /// Get target in group permission
